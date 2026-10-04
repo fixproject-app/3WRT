@@ -3,8 +3,8 @@
    MARKET 3-WT — app.js (Supabase)
    Isi 2 nilai di bawah dari: Supabase → Project Settings → API
    ============================================================ */
-const SUPABASE_URL = 'https://XXXXXXXXXXXX.supabase.co';
-const SUPABASE_ANON_KEY = 'ISI_ANON_PUBLIC_KEY_DI_SINI';
+const SUPABASE_URL = 'https://fcozeothaqyyjfqehbde.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
