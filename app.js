@@ -3,8 +3,8 @@
    MARKET 3-WT — app.js (Supabase)
    Isi 2 nilai di bawah dari: Supabase → Project Settings → API
    ============================================================ */
-const SUPABASE_URL = 'https://fcozeothaqyyjfqehbde.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp';
+const SUPABASE_URL = 'https://XXXXXXXXXXXX.supabase.co';
+const SUPABASE_ANON_KEY = 'ISI_ANON_PUBLIC_KEY_DI_SINI';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -726,8 +726,8 @@ PAGES.invoice = function () {
       <div class="col-6 col-md-3"><label class="form-label">Sampai</label><input type="date" id="invTo" class="form-control" value="${to}"></div>
       <div class="col-12 col-md-2"><button class="btn btn-accent w-100" onclick="generateInvoicePelanggan(this)"><i class="bi bi-file-earmark-pdf"></i> Buat Invoice</button></div>
     </div></div>
-    <div class="section-card"><h6>Invoice Tagihan Produksi Karjo (Barang Masuk)</h6>
-      <p class="small text-secondary">Hanya barang bertanda "Relevan Produksi Karjo" dengan sumber "Produksi Karjo". Harga memakai Harga Karjo.</p>
+    <div class="section-card"><h6>Invoice Tagihan Produksi Karjo (dari Barang Keluar)</h6>
+      <p class="small text-secondary">Diambil dari data Barang Keluar (semua pelanggan) pada barang bertanda "Relevan Produksi Karjo", dihitung dengan Harga Karjo. Di bawah tabel ada rekap total per item khusus kategori STANG.</p>
       <div class="row g-3 align-items-end">
       <div class="col-6 col-md-4"><label class="form-label">Dari</label><input type="date" id="kjFrom" class="form-control" value="${from}"></div>
       <div class="col-6 col-md-4"><label class="form-label">Sampai</label><input type="date" id="kjTo" class="form-control" value="${to}"></div>
@@ -756,21 +756,47 @@ async function generateInvoicePelanggan(btn) {
   } finally { setBtnBusy(btn, false); }
 }
 
+/* Ambil semua halaman data (Supabase membatasi 1000 baris per permintaan) */
+async function fetchAllPages(makeQuery) {
+  const size = 1000; let all = [];
+  for (let from = 0; ; from += size) {
+    const r = await callSb(makeQuery().range(from, from + size - 1));
+    if (!r.success) return null;
+    all = all.concat(r.data);
+    if (r.data.length < size) break;
+  }
+  return all;
+}
+
+/* Invoice Karjo: dari BARANG KELUAR (semua pelanggan) untuk barang bertanda "Relevan Produksi Karjo",
+   dihitung dengan Harga Karjo. Ditambah rekap total per item khusus kategori STANG. */
 async function generateInvoiceKarjo(btn) {
   const from = $('#kjFrom').value, to = $('#kjTo').value;
   if (!from || !to || from > to) return showToast('Validasi', 'Rentang tanggal tidak valid.', 'warning');
   setBtnBusy(btn, true, 'Membuat...');
   try {
-    const r = await callSb(sb.from('barang_masuk').select('tanggal,created_at,barang_masuk_item(barang_id,kode_barang,nama_barang,satuan,jumlah,urutan)').eq('sumber_nama', 'Produksi Karjo').gte('tanggal', from).lte('tanggal', to).order('tanggal').order('created_at'));
-    if (!r.success) return;
-    const groups = groupByDate(r.data, 'barang_masuk_item', i => {
-      const b = AppState.masterBarang.find(x => x.id === i.barang_id);
+    const rows = await fetchAllPages(() => sb.from('barang_keluar')
+      .select('tanggal,created_at,barang_keluar_item(barang_id,kode_barang,nama_barang,satuan,jumlah,urutan)')
+      .gte('tanggal', from).lte('tanggal', to).order('tanggal').order('created_at').order('id'));
+    if (!rows) return;
+    const bMap = new Map(AppState.masterBarang.map(b => [b.id, b]));
+    const isStang = b => String(b.kategori || '').toUpperCase().includes('STANG');
+    const groups = groupByDate(rows, 'barang_keluar_item', i => {
+      const b = bMap.get(i.barang_id);
       if (!b || !b.relevan_karjo) return null;
       const qty = num(i.jumlah), harga = num(b.harga_karjo);
-      return { kode: kodeBarang(i), nama: i.nama_barang, qty, satuan: i.satuan || '-', harga, subtotal: qty * harga };
+      return { kode: kodeBarang(i), nama: i.nama_barang, qty, satuan: i.satuan || b.satuan || '-', harga, subtotal: qty * harga, stang: isStang(b) };
     });
-    if (!groups.length) return showToast('Info', 'Tidak ada barang masuk Produksi Karjo yang relevan pada periode tersebut.', 'warning');
-    await finishInvoice({ prefix: 'KRJ', tipe: 'Produksi Karjo', judul: 'INVOICE TAGIHAN PRODUKSI', target: 'PRODUKSI KARJO', kontak: '', from, to, groups });
+    if (!groups.length) return showToast('Info', 'Tidak ada barang keluar bertanda "Relevan Produksi Karjo" pada periode tersebut.', 'warning');
+
+    const rk = new Map();
+    groups.forEach(g => g.items.forEach(it => {
+      if (!it.stang) return;
+      const e = rk.get(it.nama) || { nama: it.nama, qty: 0, subtotal: 0 };
+      e.qty += it.qty; e.subtotal += it.subtotal; rk.set(it.nama, e);
+    }));
+    const rekap = [...rk.values()].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
+    await finishInvoice({ prefix: 'KRJ', tipe: 'Produksi Karjo', judul: 'INVOICE TAGIHAN PRODUKSI', target: 'PRODUKSI KARJO', kontak: '', from, to, groups, rekap });
   } finally { setBtnBusy(btn, false); }
 }
 
@@ -883,6 +909,30 @@ async function buildInvoiceDoc(o) {
   doc.setTextColor(255, 255, 255).setFont('helvetica', 'bold').text(fmtNum(o.totalQty), rx, y + 9, { align: 'right' }); doc.text('Rp ' + fmtNum(o.total), rx, y + 15.5, { align: 'right' });
   doc.setDrawColor(70, 78, 120); doc.setLineWidth(0.2); doc.line(lx, y + 19, rx, y + 19);
   doc.setFontSize(10.5).setTextColor(...C.mint).text('TOTAL AKHIR :', lx, y + 27); doc.setFontSize(13).text('Rp ' + fmtNum(o.total), rx, y + 27, { align: 'right' });
+
+  // ── Rekap total per item (khusus invoice Karjo: kategori STANG) ──
+  if (o.rekap && o.rekap.length) {
+    y += 32 + 10;
+    ensure(40);
+    doc.setFillColor(...C.soft); doc.roundedRect(ML, y, CW, 8, 1.5, 1.5, 'F');
+    doc.setFillColor(...C.accent); doc.roundedRect(ML, y, 1.6, 8, 0.8, 0.8, 'F');
+    doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...C.ink).text('REKAP TOTAL PER ITEM - JENIS STANG', ML + 5, y + 5.4);
+    doc.setFontSize(8.3).setTextColor(...C.accent).text(`Periode ${tglKode(o.from)} - ${tglKode(o.to)}`, W - MR - 3, y + 5.4, { align: 'right' });
+    y += 10;
+    const tq = o.rekap.reduce((s, r) => s + r.qty, 0), tj = o.rekap.reduce((s, r) => s + r.subtotal, 0);
+    doc.autoTable({
+      startY: y, margin: { left: ML, right: MR, top: 16, bottom: MB }, theme: 'plain',
+      head: [['No.', 'Nama Item', 'Qty', 'Jumlah']],
+      body: o.rekap.map((r, i) => [i + 1, r.nama, fmtNum(r.qty), fmtNum(r.subtotal)]),
+      foot: [['', 'TOTAL', fmtNum(tq), fmtNum(tj)]], showFoot: 'lastPage',
+      styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 2, bottom: 2, left: 2.2, right: 2.2 }, textColor: C.ink, lineWidth: 0, overflow: 'linebreak' },
+      headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.8, cellPadding: { top: 2.2, bottom: 2.2, left: 2.2, right: 2.2 } },
+      footStyles: { fillColor: C.soft, textColor: C.ink, fontStyle: 'bold', fontSize: 9.2 },
+      alternateRowStyles: { fillColor: C.zebra },
+      columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 32, halign: 'right' }, 3: { cellWidth: 42, halign: 'right', fontStyle: 'bold' } },
+      didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.line); doc.setLineWidth(0.15); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } }
+    });
+  }
 
   // ── Nomor halaman x/y ──
   const n = doc.getNumberOfPages();
