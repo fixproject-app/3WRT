@@ -4,7 +4,7 @@
    Isi 2 nilai di bawah dari: Supabase → Project Settings → API
    ============================================================ */
 const SUPABASE_URL = 'https://fcozeothaqyyjfqehbde.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp';
+const SUPABASE_ANON_KEY = 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp';';
 
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -918,8 +918,9 @@ async function generateInvoiceKarjo(btn) {
       const b = bMap.get(i.barang_id);
       if (!b || !b.relevan_karjo) return null;
       const qty = num(i.jumlah), harga = num(b.harga_karjo);
-      return { kode: kodeBarang(i), nama: i.nama_barang, qty, satuan: i.satuan || b.satuan || '-', harga, subtotal: qty * harga, stang: isStang(b) };
+      return { kode: kodeBarang(i), nama: i.nama_barang, qty, satuan: i.satuan || b.satuan || '-', harga, subtotal: qty * harga, stang: isStang(b), prod: b.diproduksi_oleh === 'Karjo' ? 0 : 1 };
     });
+    groups.forEach(g => g.items.sort((x, y) => x.prod - y.prod));   // produksi Karjo di atas, produksi 3-WRT menyusul (sort stabil)
     if (!groups.length) return showToast('Info', 'Tidak ada barang keluar bertanda "Relevan Produksi Karjo" pada periode tersebut.', 'warning');
 
     // Rekap produksi stang terkirim: semua barang keluar kategori STANG, dipisah menurut penanda Relevan Karjo
@@ -927,8 +928,8 @@ async function generateInvoiceKarjo(btn) {
     rows.forEach(r => (r.barang_keluar_item || []).forEach(i => {
       const b = bMap.get(i.barang_id); if (!b || !isStang(b)) return;
       const tgt = b.diproduksi_oleh === 'Karjo' ? rk.karjo : rk.wrt;
-      const e = tgt.get(i.nama_barang) || { nama: i.nama_barang, qty: 0, satuan: i.satuan || b.satuan || 'PCS' };
-      e.qty += num(i.jumlah); tgt.set(i.nama_barang, e);
+      const e = tgt.get(i.nama_barang) || { nama: i.nama_barang, qty: 0, jumlah: 0, satuan: i.satuan || b.satuan || 'PCS' };
+      e.qty += num(i.jumlah); e.jumlah += b.relevan_karjo ? num(i.jumlah) * num(b.harga_karjo) : 0; tgt.set(i.nama_barang, e);
       if (!rk.min || r.tanggal < rk.min) rk.min = r.tanggal;
       if (!rk.max || r.tanggal > rk.max) rk.max = r.tanggal;
     }));
@@ -1044,7 +1045,8 @@ async function buildInvoiceDoc(o) {
       styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 2, bottom: 2, left: 2.2, right: 2.2 }, textColor: C.ink, lineWidth: 0, overflow: 'linebreak' },
       headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.8, cellPadding: { top: 2.2, bottom: 2.2, left: 2.2, right: 2.2 } },
       alternateRowStyles: { fillColor: C.zebra },
-      columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 22 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 16, halign: 'right' }, 4: { cellWidth: 18, halign: 'center' }, 5: { cellWidth: 26, halign: 'right' }, 6: { cellWidth: 30, halign: 'right', fontStyle: 'bold' } },
+      columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 22 }, 2: { cellWidth: 'auto' }, 3: { cellWidth: 17, halign: 'center' }, 4: { cellWidth: 18, halign: 'center' }, 5: { cellWidth: 26, halign: 'center' }, 6: { cellWidth: 30, halign: 'center', fontStyle: 'bold' } },
+      didParseCell: d => { if (d.column.index >= 3) d.cell.styles.halign = 'center'; },
       didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.line); doc.setLineWidth(0.15); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } }
     });
     y = doc.lastAutoTable.finalY + 4;
@@ -1079,17 +1081,18 @@ async function buildInvoiceDoc(o) {
       doc.setFillColor(...warna); doc.roundedRect(ML, y, 52, 7, 3.5, 3.5, 'F');
       doc.setFont('helvetica', 'bold').setFontSize(8.8).setTextColor(255, 255, 255).text(judul, ML + 26, y + 4.8, { align: 'center' });
       y += 9;
-      const tot = rows.reduce((s, r) => s + r.qty, 0), sat = new Set(rows.map(r => r.satuan || 'PCS'));
+      const tot = rows.reduce((s, r) => s + r.qty, 0), totJ = rows.reduce((s, r) => s + r.jumlah, 0), sat = new Set(rows.map(r => r.satuan || 'PCS'));
       doc.autoTable({
         startY: y, margin: { left: ML, right: MR, top: 16, bottom: MB }, theme: 'plain',
-        head: [['NAMA ITEM BARANG', 'QTY', 'SATUAN']],
-        body: rows.map(r => [r.nama, fmtNum(r.qty), r.satuan || 'PCS']),
-        foot: [['Total :', fmtNum(tot), sat.size === 1 ? [...sat][0] : '']], showFoot: 'lastPage',
+        head: [['NAMA ITEM BARANG', 'QTY', 'SATUAN', 'JUMLAH']],
+        body: rows.map(r => [r.nama, fmtNum(r.qty), r.satuan || 'PCS', fmtNum(r.jumlah)]),
+        foot: [['Total :', fmtNum(tot), sat.size === 1 ? [...sat][0] : '', fmtNum(totJ)]], showFoot: 'lastPage',
         styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 2, bottom: 2, left: 2.2, right: 2.2 }, textColor: C.ink, lineWidth: 0, overflow: 'linebreak' },
         headStyles: { fillColor: warna, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.8 },
         footStyles: { fillColor: C.band, textColor: C.ink, fontStyle: 'bold', fontSize: 9.2 },
         alternateRowStyles: { fillColor: C.zebra },
-        columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 32, halign: 'right' }, 2: { cellWidth: 28, halign: 'center' } },
+        columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 24, halign: 'center' }, 2: { cellWidth: 24, halign: 'center' }, 3: { cellWidth: 38, halign: 'center', fontStyle: 'bold' } },
+        didParseCell: d => { if (d.column.index >= 1) d.cell.styles.halign = 'center'; },
         didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.line); doc.setLineWidth(0.15); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } }
       });
       y = doc.lastAutoTable.finalY + 8;
