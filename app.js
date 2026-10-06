@@ -1,12 +1,15 @@
 'use strict';
 /* ============================================================
    MARKET 3-WT — app.js (Supabase)
-   Isi 2 nilai di bawah dari: Supabase → Project Settings → API
+   URL & key Supabase TIDAK diisi di sini, melainkan di file config.js
+   (agar memperbarui app.js tidak menimpa konfigurasi Anda).
    ============================================================ */
-const SUPABASE_URL = 'https://fcozeothaqyyjfqehbde.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp';';
-
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const CFG = window.APP_CONFIG || {};
+const SUPABASE_URL = String(CFG.SUPABASE_URL || 'https://fcozeothaqyyjfqehbde.supabase.co').trim();
+const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp').trim();
+const CONFIG_OK = /^https:\/\/\S+$/.test(SUPABASE_URL) && !/XXXX/.test(SUPABASE_URL) &&
+                  SUPABASE_ANON_KEY.length > 40 && !/\s/.test(SUPABASE_ANON_KEY) && !/ISI_ANON/.test(SUPABASE_ANON_KEY);
+const sb = CONFIG_OK ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 /* ───────────────────────── STATE ───────────────────────── */
 const AppState = { user: null, profile: null, role: null, config: {}, masterBarang: [], masterPelanggan: [], masterSumber: [], masterBiaya: [], currentPage: 'dashboard' };
@@ -1114,6 +1117,10 @@ async function buildInvoiceDoc(o) {
 
 /* ───────────────────────── INIT ───────────────────────── */
 document.addEventListener('DOMContentLoaded', async () => {
+  if (!CONFIG_OK) {
+    $('#loadingOverlay').innerHTML = '<div class="text-center p-4" style="max-width:420px"><i class="bi bi-exclamation-triangle fs-1 text-warning"></i><h5 class="mt-3">Konfigurasi Supabase belum benar</h5><p class="small" style="opacity:.8">Buka file <b>config.js</b>, lalu isi <b>SUPABASE_URL</b> dan <b>SUPABASE_ANON_KEY</b> (satu baris, di antara tanda kutip lurus). Setelah itu muat ulang halaman.</p></div>';
+    return;
+  }
   $('#loginBtn').addEventListener('click', doLogin);
   ['loginEmail', 'loginPassword'].forEach(id => $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); }));
   // Penting: jangan await panggilan Supabase di dalam callback ini (hindari deadlock) → pakai setTimeout
