@@ -564,8 +564,8 @@ PAGES.stok = function () {
 function renderStokTable() {
   const q = ($('#stokSearch') ? $('#stokSearch').value : '').toLowerCase();
   const list = AppState.masterBarang.filter(b => !q || (b.nama || '').toLowerCase().includes(q) || (b.kode || '').toLowerCase().includes(q));
-  $('#stokTable').innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Satuan</th><th class="text-end">Harga Jual</th><th class="text-end">Harga Karjo</th><th class="text-end">HPP</th><th class="text-end">Margin</th><th class="text-end">Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
-    ${list.map(b => `<tr><td>${esc(b.kode || '-')}</td><td class="fw-bold">${esc(b.nama)}</td><td>${esc(b.kategori || '-')}</td><td>${esc(b.satuan)}</td><td class="text-end">${fmtRupiah(b.harga_jual)}</td><td class="text-end">${b.relevan_karjo ? fmtRupiah(b.harga_karjo) : '-'}</td><td class="text-end">${b.hpp == null ? '-' : fmtRupiah(b.hpp)}</td><td class="text-end">${b.margin == null ? '-' : fmtRupiah(b.margin)}</td><td class="text-end"><span class="badge-status ${num(b.stok) <= 5 ? 'badge-low' : 'badge-ok'}">${fmtNum(b.stok)}</span></td><td>${badgeStatus(b.status)}</td><td><button class="action-btn edit" onclick="openBarangForm('${b.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteBarang('${b.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="11" class="text-center text-secondary py-4">Belum ada barang.</td></tr>'}
+  $('#stokTable').innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Diproduksi</th><th>Satuan</th><th class="text-end">Harga Jual</th><th class="text-end">Harga Karjo</th><th class="text-end">HPP</th><th class="text-end">Margin</th><th class="text-end">Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+    ${list.map(b => `<tr><td>${esc(b.kode || '-')}</td><td class="fw-bold">${esc(b.nama)}</td><td>${esc(b.kategori || '-')}</td><td><span class="badge-status ${b.diproduksi_oleh === 'Karjo' ? '' : 'badge-ok'}" ${b.diproduksi_oleh === 'Karjo' ? 'style="background:rgba(217,119,6,.15);color:#d97706"' : ''}>${esc(b.diproduksi_oleh || '3-WRT')}</span></td><td>${esc(b.satuan)}</td><td class="text-end">${fmtRupiah(b.harga_jual)}</td><td class="text-end">${b.relevan_karjo ? fmtRupiah(b.harga_karjo) : '-'}</td><td class="text-end">${b.hpp == null ? '-' : fmtRupiah(b.hpp)}</td><td class="text-end">${b.margin == null ? '-' : fmtRupiah(b.margin)}</td><td class="text-end"><span class="badge-status ${num(b.stok) <= 5 ? 'badge-low' : 'badge-ok'}">${fmtNum(b.stok)}</span></td><td>${badgeStatus(b.status)}</td><td><button class="action-btn edit" onclick="openBarangForm('${b.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteBarang('${b.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="12" class="text-center text-secondary py-4">Belum ada barang.</td></tr>'}
   </tbody></table></div>`;
 }
 function openBarangForm(id) {
@@ -578,16 +578,18 @@ function openBarangForm(id) {
     <div class="col-md-4"><label class="form-label">Harga Jual</label><input id="fbHarga" type="number" min="0" step="any" class="form-control" value="${b ? num(b.harga_jual) : 0}"></div>
     <div class="col-md-4"><label class="form-label">HPP (kosongkan jika belum ada)</label><input id="fbHpp" type="number" min="0" step="any" class="form-control" value="${b && b.hpp != null ? num(b.hpp) : ''}"></div>
     <div class="col-md-4"><label class="form-label">${b ? 'Stok (ubah lewat transaksi)' : 'Stok Awal'}</label><input id="fbStok" type="number" step="any" class="form-control" value="${b ? num(b.stok) : 0}" ${b ? 'disabled' : ''}></div>
-    <div class="col-md-4"><label class="form-label">Relevan Produksi Karjo?</label><select id="fbRelevan" class="form-select"><option value="Tidak" ${b && b.relevan_karjo ? '' : 'selected'}>Tidak</option><option value="Ya" ${b && b.relevan_karjo ? 'selected' : ''}>Ya</option></select></div>
+    <div class="col-md-4"><label class="form-label">Ditagih ke Karjo? (Relevan Karjo)</label><select id="fbRelevan" class="form-select"><option value="Tidak" ${b && b.relevan_karjo ? '' : 'selected'}>Tidak</option><option value="Ya" ${b && b.relevan_karjo ? 'selected' : ''}>Ya</option></select></div>
     <div class="col-md-4"><label class="form-label">Harga Karjo</label><input id="fbHargaKarjo" type="number" min="0" step="any" class="form-control" value="${b ? num(b.harga_karjo) : 0}"></div>
     <div class="col-md-4"><label class="form-label">Status</label><select id="fbStatus" class="form-select"><option ${b && b.status === 'Nonaktif' ? '' : 'selected'}>Aktif</option><option ${b && b.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option></select></div>
+    <div class="col-md-4"><label class="form-label">Diproduksi oleh</label><select id="fbProduksi" class="form-select"><option value="3-WRT" ${b && b.diproduksi_oleh === 'Karjo' ? '' : 'selected'}>3-WRT</option><option value="Karjo" ${b && b.diproduksi_oleh === 'Karjo' ? 'selected' : ''}>Karjo</option></select></div>
+    <div class="col-md-8 small text-secondary align-self-end">"Ditagih ke Karjo" menentukan barang muncul di badan invoice Karjo (dengan Harga Karjo). "Diproduksi oleh" hanya menentukan masuk tabel rekap PRODUKSI KARJO atau PRODUKSI 3-WRT. Keduanya bebas dikombinasikan.</div>
     <div class="col-12 text-end"><button class="btn btn-secondary me-2" data-bs-dismiss="modal">Batal</button><button class="btn btn-accent" id="fbSimpan" onclick="saveBarang('${id || ''}')">Simpan</button></div>
   </div>`);
 }
 async function saveBarang(id) {
   const g = i => $('#' + i).value.trim();
   if (!g('fbNama')) return showToast('Validasi', 'Nama barang wajib diisi.', 'warning');
-  const payload = { kode: g('fbKode').toUpperCase() || null, nama: g('fbNama'), kategori: g('fbKategori') || null, satuan: g('fbSatuan') || 'PCS', harga_jual: num(g('fbHarga')), harga_karjo: num(g('fbHargaKarjo')), relevan_karjo: g('fbRelevan') === 'Ya', hpp: g('fbHpp') === '' ? null : num(g('fbHpp')), status: g('fbStatus') };
+  const payload = { kode: g('fbKode').toUpperCase() || null, nama: g('fbNama'), kategori: g('fbKategori') || null, satuan: g('fbSatuan') || 'PCS', harga_jual: num(g('fbHarga')), harga_karjo: num(g('fbHargaKarjo')), relevan_karjo: g('fbRelevan') === 'Ya', hpp: g('fbHpp') === '' ? null : num(g('fbHpp')), diproduksi_oleh: g('fbProduksi'), status: g('fbStatus') };
   let q; if (id) q = sb.from('master_barang').update(payload).eq('id', id); else { payload.stok = num(g('fbStok')); q = sb.from('master_barang').insert(payload); }
   const btn = $('#fbSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
   const r = await callSb(q, 'Barang disimpan.'); setBtnBusy(btn, false);
@@ -858,7 +860,7 @@ PAGES.invoice = function () {
       <div class="col-12 col-md-2"><button class="btn btn-accent w-100" onclick="generateInvoicePelanggan(this)"><i class="bi bi-file-earmark-pdf"></i> Buat Invoice</button></div>
     </div></div>
     <div class="section-card"><h6>Invoice Tagihan Produksi Karjo (dari Barang Keluar)</h6>
-      <p class="small text-secondary">Diambil dari data Barang Keluar (semua pelanggan) pada barang bertanda "Relevan Produksi Karjo", dihitung dengan Harga Karjo. Di bawah tabel ada rekap total per item khusus kategori STANG.</p>
+      <p class="small text-secondary">Diambil dari data Barang Keluar (semua pelanggan) pada barang bertanda "Relevan Produksi Karjo", dihitung dengan Harga Karjo. Di bawah tabel ada rekap produksi stang terkirim yang dipisah <b>PRODUKSI KARJO</b> dan <b>PRODUKSI 3-WRT</b> menurut kolom "Diproduksi oleh" di master barang (terlepas barang itu ditagih ke Karjo atau tidak).</p>
       <div class="row g-3 align-items-end">
       <div class="col-6 col-md-4"><label class="form-label">Dari</label><input type="date" id="kjFrom" class="form-control" value="${from}"></div>
       <div class="col-6 col-md-4"><label class="form-label">Sampai</label><input type="date" id="kjTo" class="form-control" value="${to}"></div>
@@ -920,14 +922,19 @@ async function generateInvoiceKarjo(btn) {
     });
     if (!groups.length) return showToast('Info', 'Tidak ada barang keluar bertanda "Relevan Produksi Karjo" pada periode tersebut.', 'warning');
 
-    const rk = new Map();
-    groups.forEach(g => g.items.forEach(it => {
-      if (!it.stang) return;
-      const e = rk.get(it.nama) || { nama: it.nama, qty: 0, subtotal: 0 };
-      e.qty += it.qty; e.subtotal += it.subtotal; rk.set(it.nama, e);
+    // Rekap produksi stang terkirim: semua barang keluar kategori STANG, dipisah menurut penanda Relevan Karjo
+    const rk = { karjo: new Map(), wrt: new Map(), min: null, max: null };
+    rows.forEach(r => (r.barang_keluar_item || []).forEach(i => {
+      const b = bMap.get(i.barang_id); if (!b || !isStang(b)) return;
+      const tgt = b.diproduksi_oleh === 'Karjo' ? rk.karjo : rk.wrt;
+      const e = tgt.get(i.nama_barang) || { nama: i.nama_barang, qty: 0, satuan: i.satuan || b.satuan || 'PCS' };
+      e.qty += num(i.jumlah); tgt.set(i.nama_barang, e);
+      if (!rk.min || r.tanggal < rk.min) rk.min = r.tanggal;
+      if (!rk.max || r.tanggal > rk.max) rk.max = r.tanggal;
     }));
-    const rekap = [...rk.values()].sort((a, b) => a.nama.localeCompare(b.nama, 'id'));
-    await finishInvoice({ prefix: 'KRJ', tipe: 'Produksi Karjo', judul: 'INVOICE TAGIHAN PRODUKSI', target: 'PRODUKSI KARJO', kontak: '', from, to, groups, rekap });
+    const urut = m => [...m.values()].sort((x, y) => x.nama.localeCompare(y.nama, 'id'));
+    const rekap = { karjo: urut(rk.karjo), wrt: urut(rk.wrt), label: rk.min ? rekapLabel(rk.min, rk.max) : '' };
+    await finishInvoice({ prefix: 'KRJ', tipe: 'Produksi Karjo', judul: 'LAPORAN TAGIHAN MINGGUAN', kepadaLabel: 'NAMA VENDOR :', target: 'KARJO', kontak: '', from, to, groups, rekap });
   } finally { setBtnBusy(btn, false); }
 }
 
@@ -961,6 +968,19 @@ function loadImageDataUrl(url) {
     img.onerror = () => { clearTimeout(timer); resolve(null); };
     img.src = url;
   });
+}
+
+/* "MINGGU KE- 4 | 21 s/d 26 SEPTEMBER 2026" — minggu ke-n dihitung dari minggu (Senin-Minggu) yang memuat tanggal 1 */
+function rekapLabel(a, b) {
+  const A = parseDate(a), B = parseDate(b);
+  const same = A.getMonth() === B.getMonth() && A.getFullYear() === B.getFullYear();
+  const bln = `${BULAN_ID[B.getMonth()].toUpperCase()} ${B.getFullYear()}`;
+  const range = same ? `${A.getDate()} s/d ${B.getDate()} ${bln}` : `${A.getDate()} ${BULAN_ID[A.getMonth()].toUpperCase()} s/d ${B.getDate()} ${bln}`;
+  if (same && Math.round((B - A) / 86400000) <= 6) {
+    const off = (new Date(A.getFullYear(), A.getMonth(), 1).getDay() + 6) % 7;
+    return `MINGGU KE- ${Math.ceil((A.getDate() + off) / 7)} | ${range}`;
+  }
+  return `PERIODE ${range}`;
 }
 
 function labelBulan(from, to) {
@@ -1000,9 +1020,11 @@ async function buildInvoiceDoc(o) {
   doc.setFillColor(...C.accent); doc.roundedRect(ML, 40, 1.4, 14, 0.7, 0.7, 'F');
   doc.setFont('helvetica', 'bold').setFontSize(9).setTextColor(...C.ink).text('Tanggal', ML + 5, o.kontak ? 45.2 : 47.2);
   const mid = ML + CW / 2;
-  doc.setTextColor(...C.muted).text('Kepada :', mid, o.kontak ? 45.2 : 47.2);
-  doc.setFontSize(11).setTextColor(...C.ink).text(String(o.target).toUpperCase(), mid + 17, o.kontak ? 45.2 : 47.2);
-  if (o.kontak) doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...C.muted).text(String(o.kontak), mid + 17, 50.4);
+  const lblKpd = o.kepadaLabel || 'Kepada :';
+  doc.setTextColor(...C.muted).text(lblKpd, mid, o.kontak ? 45.2 : 47.2);
+  const nx = mid + doc.getTextWidth(lblKpd) + 3;
+  doc.setFontSize(11).setTextColor(...C.ink).text(String(o.target).toUpperCase(), nx, o.kontak ? 45.2 : 47.2);
+  if (o.kontak) doc.setFont('helvetica', 'normal').setFontSize(8).setTextColor(...C.muted).text(String(o.kontak), nx, 50.4);
 
   // ── Blok per tanggal ──
   let y = 62; const bottom = H - MB;
@@ -1042,28 +1064,43 @@ async function buildInvoiceDoc(o) {
   doc.setDrawColor(70, 78, 120); doc.setLineWidth(0.2); doc.line(lx, y + 19, rx, y + 19);
   doc.setFontSize(10.5).setTextColor(...C.mint).text('TOTAL AKHIR :', lx, y + 27); doc.setFontSize(13).text('Rp ' + fmtNum(o.total), rx, y + 27, { align: 'right' });
 
-  // ── Rekap total per item (khusus invoice Karjo: kategori STANG) ──
-  if (o.rekap && o.rekap.length) {
+  // ── Rekap produksi stang terkirim: PRODUKSI KARJO vs PRODUKSI 3-WRT (khusus invoice Karjo) ──
+  const rk = o.rekap;
+  if (rk && (rk.karjo.length || rk.wrt.length)) {
     y += 32 + 10;
-    ensure(40);
-    doc.setFillColor(...C.soft); doc.roundedRect(ML, y, CW, 8, 1.5, 1.5, 'F');
-    doc.setFillColor(...C.accent); doc.roundedRect(ML, y, 1.6, 8, 0.8, 0.8, 'F');
-    doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...C.ink).text('REKAP TOTAL PER ITEM - JENIS STANG', ML + 5, y + 5.4);
-    doc.setFontSize(8.3).setTextColor(...C.accent).text(`Periode ${tglKode(o.from)} - ${tglKode(o.to)}`, W - MR - 3, y + 5.4, { align: 'right' });
-    y += 10;
-    const tq = o.rekap.reduce((s, r) => s + r.qty, 0), tj = o.rekap.reduce((s, r) => s + r.subtotal, 0);
-    doc.autoTable({
-      startY: y, margin: { left: ML, right: MR, top: 16, bottom: MB }, theme: 'plain',
-      head: [['No.', 'Nama Item', 'Qty', 'Jumlah']],
-      body: o.rekap.map((r, i) => [i + 1, r.nama, fmtNum(r.qty), fmtNum(r.subtotal)]),
-      foot: [['', 'TOTAL', fmtNum(tq), fmtNum(tj)]], showFoot: 'lastPage',
-      styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 2, bottom: 2, left: 2.2, right: 2.2 }, textColor: C.ink, lineWidth: 0, overflow: 'linebreak' },
-      headStyles: { fillColor: C.navy, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.8, cellPadding: { top: 2.2, bottom: 2.2, left: 2.2, right: 2.2 } },
-      footStyles: { fillColor: C.soft, textColor: C.ink, fontStyle: 'bold', fontSize: 9.2 },
-      alternateRowStyles: { fillColor: C.zebra },
-      columnStyles: { 0: { cellWidth: 10, halign: 'center' }, 1: { cellWidth: 'auto' }, 2: { cellWidth: 32, halign: 'right' }, 3: { cellWidth: 42, halign: 'right', fontStyle: 'bold' } },
-      didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.line); doc.setLineWidth(0.15); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } }
-    });
+    ensure(60);
+    doc.setFillColor(220, 38, 38); doc.roundedRect(ML, y, CW, 15, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(255, 255, 255).text('REKAP PRODUKSI STANG TERKIRIM', ML + CW / 2, y + 6.2, { align: 'center' });
+    doc.setFontSize(9.5).text(rk.label, ML + CW / 2, y + 11.6, { align: 'center' });
+    y += 21;
+    const tabel = (judul, rows, warna) => {
+      if (!rows.length) return 0;
+      ensure(36);
+      doc.setFillColor(...warna); doc.roundedRect(ML, y, 52, 7, 3.5, 3.5, 'F');
+      doc.setFont('helvetica', 'bold').setFontSize(8.8).setTextColor(255, 255, 255).text(judul, ML + 26, y + 4.8, { align: 'center' });
+      y += 9;
+      const tot = rows.reduce((s, r) => s + r.qty, 0), sat = new Set(rows.map(r => r.satuan || 'PCS'));
+      doc.autoTable({
+        startY: y, margin: { left: ML, right: MR, top: 16, bottom: MB }, theme: 'plain',
+        head: [['NAMA ITEM BARANG', 'QTY', 'SATUAN']],
+        body: rows.map(r => [r.nama, fmtNum(r.qty), r.satuan || 'PCS']),
+        foot: [['Total :', fmtNum(tot), sat.size === 1 ? [...sat][0] : '']], showFoot: 'lastPage',
+        styles: { font: 'helvetica', fontSize: 8.8, cellPadding: { top: 2, bottom: 2, left: 2.2, right: 2.2 }, textColor: C.ink, lineWidth: 0, overflow: 'linebreak' },
+        headStyles: { fillColor: warna, textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 7.8 },
+        footStyles: { fillColor: C.band, textColor: C.ink, fontStyle: 'bold', fontSize: 9.2 },
+        alternateRowStyles: { fillColor: C.zebra },
+        columnStyles: { 0: { cellWidth: 'auto' }, 1: { cellWidth: 32, halign: 'right' }, 2: { cellWidth: 28, halign: 'center' } },
+        didDrawCell: d => { if (d.section === 'body') { doc.setDrawColor(...C.line); doc.setLineWidth(0.15); doc.line(d.cell.x, d.cell.y + d.cell.height, d.cell.x + d.cell.width, d.cell.y + d.cell.height); } }
+      });
+      y = doc.lastAutoTable.finalY + 8;
+      return tot;
+    };
+    const tk = tabel('PRODUKSI KARJO', rk.karjo, [217, 119, 6]);
+    const tw = tabel('PRODUKSI 3-WRT', rk.wrt, C.accent);
+    ensure(14);
+    doc.setFillColor(...C.accent); doc.roundedRect(W - MR - 78, y, 78, 11, 3, 3, 'F');
+    doc.setFont('helvetica', 'bold').setFontSize(11).setTextColor(255, 255, 255).text('TOTAL ITEM :', W - MR - 72, y + 7.4);
+    doc.text(fmtNum(tk + tw), W - MR - 5, y + 7.4, { align: 'right' });
   }
 
   // ── Nomor halaman x/y ──
