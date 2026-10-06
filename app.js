@@ -122,7 +122,7 @@ function toggleDarkMode() {
   const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   html.setAttribute('data-theme', next);
   try { localStorage.setItem('m3wt-theme', next); } catch (e) { }
-  if (AppState.currentPage === 'dashboard' && AppState.role) renderTop10Chart();
+  if (AppState.currentPage === 'dashboard' && AppState.role) { renderTop10Chart(); renderCompare(); }
 }
 function toggleSidebar() { $('#sidebar').classList.toggle('show'); document.querySelector('.sidebar-overlay').classList.toggle('show'); }
 function closeSidebar() { $('#sidebar').classList.remove('show'); document.querySelector('.sidebar-overlay').classList.remove('show'); }
@@ -139,9 +139,12 @@ function applyConfig() {
   document.title = name;
   $('#appTitle').textContent = name;
   $('#loginTitle').textContent = name;
-  const logo = c.logoUrl || 'https://placehold.co/80x80/16a34a/ffffff?text=3WT';
-  $('#appLogo').src = logo;
-  $('#loginLogo').src = logo;
+  const PH = 'https://placehold.co/80x80/16a34a/ffffff?text=3WT';
+  ['#appLogo', '#loginLogo'].forEach(sel => {
+    const img = $(sel);
+    img.onerror = () => { img.onerror = null; img.src = PH; };   // URL rusak → tampil placeholder, bukan ikon rusak
+    img.src = c.logoUrl || PH;
+  });
 }
 
 /* ───────────────────────── AUTH ───────────────────────── */
@@ -293,6 +296,8 @@ async function loadDashboard() {
       </div></div>
     </div>
 
+    ${compareCardHtml()}
+
     <div class="row g-3">
       <div class="col-lg-6"><div class="section-card"><h6>Omset per Pelanggan</h6>
         ${perPel.length ? perPel.map(p => `<div class="mini-card"><div><div class="mc-name">${esc(p.nama)}</div><div class="mc-value">${fmtRupiah(p.omset)}</div></div><button class="mc-btn" onclick="showDetailPelanggan('${p.id}')">Detail</button></div>`).join('') : '<p class="text-secondary small mb-0">Belum ada pelanggan aktif.</p>'}
@@ -302,6 +307,78 @@ async function loadDashboard() {
       </div></div>
     </div>`;
   renderTop10Chart();
+  loadCompareChart();
+}
+
+/* ── Perbandingan barang keluar per item: bulan lalu vs bulan ini ── */
+let compareData = null;
+let compareOpt = { metrik: 'qty', mode: 'penuh', top: 10 };
+const optSel = (v, cur) => String(v) === String(cur) ? 'selected' : '';
+function compareCardHtml() {
+  return `<div class="section-card mb-3"><h6><span><i class="bi bi-bar-chart-steps text-success"></i> Perbandingan Barang Keluar per Item: Bulan Lalu vs Bulan Ini</span></h6>
+    <div class="row g-2 mb-3">
+      <div class="col-6 col-md-3"><label class="form-label small mb-1">Ukuran</label><select id="cmpMetrik" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="qty" ${optSel('qty', compareOpt.metrik)}>Qty (unit)</option><option value="nilai" ${optSel('nilai', compareOpt.metrik)}>Omset (Rp)</option></select></div>
+      <div class="col-6 col-md-5"><label class="form-label small mb-1">Pembanding</label><select id="cmpMode" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="penuh" ${optSel('penuh', compareOpt.mode)}>Bulan lalu penuh</option><option value="sama" ${optSel('sama', compareOpt.mode)}>Bulan lalu s/d tanggal yang sama</option></select></div>
+      <div class="col-6 col-md-3"><label class="form-label small mb-1">Tampilkan</label><select id="cmpTop" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="10" ${optSel(10, compareOpt.top)}>Top 10 item</option><option value="20" ${optSel(20, compareOpt.top)}>Top 20 item</option><option value="999" ${optSel(999, compareOpt.top)}>Semua item</option></select></div>
+    </div>
+    <div id="compareBody">${spinnerBlock()}</div></div>`;
+}
+async function loadCompareChart() {
+  const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+  const thisStart = dateToStr(new Date(y, m, 1)), thisEnd = dateToStr(new Date(y, m + 1, 0));
+  const lastStart = dateToStr(new Date(y, m - 1, 1)), lastEnd = dateToStr(new Date(y, m, 0));
+  const rows = await fetchAllPages(() => sb.from('barang_keluar').select('tanggal,barang_keluar_item(nama_barang,satuan,jumlah,subtotal)').gte('tanggal', lastStart).lte('tanggal', thisEnd).order('tanggal').order('id'));
+  const box = $('#compareBody'); if (!box) return;   // pengguna sudah pindah halaman
+  if (!rows) { box.innerHTML = errBox('Gagal memuat data perbandingan.', 'loadCompareChart()'); return; }
+  compareData = { rows, thisStart, lastStart, lastEnd, today: now.getDate(), lastLabel: `${BULAN_ID[(m + 11) % 12]} ${m === 0 ? y - 1 : y}`, thisLabel: `${BULAN_ID[m]} ${y}` };
+  renderCompare();
+}
+function onCompareOpt() {
+  compareOpt = { metrik: $('#cmpMetrik').value, mode: $('#cmpMode').value, top: num($('#cmpTop').value) };
+  renderCompare();
+}
+function renderCompare() {
+  const box = $('#compareBody'); if (!box || !compareData) return;
+  const d = compareData, qty = compareOpt.metrik === 'qty', field = qty ? 'jumlah' : 'subtotal', sama = compareOpt.mode === 'sama';
+  const fmtV = v => qty ? fmtNum(v) : fmtRupiah(v);
+  const cutDay = Math.min(d.today, num(d.lastEnd.slice(8, 10)));
+  const lastCut = sama ? d.lastStart.slice(0, 8) + pad(cutDay) : d.lastEnd;
+  const agg = {};
+  d.rows.forEach(r => {
+    const ini = r.tanggal >= d.thisStart;
+    if (!ini && r.tanggal > lastCut) return;
+    (r.barang_keluar_item || []).forEach(i => { const e = agg[i.nama_barang] = agg[i.nama_barang] || { nama: i.nama_barang, lalu: 0, ini: 0 }; e[ini ? 'ini' : 'lalu'] += num(i[field]); });
+  });
+  const list = Object.values(agg).sort((a, b) => (b.lalu + b.ini) - (a.lalu + a.ini));
+  if (!list.length) { box.innerHTML = '<p class="text-secondary small mb-0">Belum ada barang keluar pada bulan lalu maupun bulan ini.</p>'; return; }
+  const totLalu = list.reduce((s, e) => s + e.lalu, 0), totIni = list.reduce((s, e) => s + e.ini, 0);
+  const pct = (a, b) => a > 0 ? ((b - a) / a * 100) : null;
+  const pTot = pct(totLalu, totIni), up = totIni >= totLalu;
+  const shown = list.slice(0, compareOpt.top);
+  const h = Math.max(260, shown.length * 40 + 70);
+  const lblLalu = d.lastLabel + (sama ? ` (s/d tgl ${cutDay})` : ''), lblIni = d.thisLabel + ' (s/d hari ini)';
+  box.innerHTML = `
+    <div class="row g-2 mb-3">
+      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">${esc(lblLalu)}</div><div class="mc-value" style="color:#64748b">${fmtV(totLalu)}</div></div></div></div>
+      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">${esc(lblIni)}</div><div class="mc-value">${fmtV(totIni)}</div></div></div></div>
+      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">Perubahan total</div><div class="mc-value ${up ? 'text-success' : 'text-danger'}">${up ? '▲' : '▼'} ${pTot === null ? (totIni > 0 ? 'Baru' : '-') : Math.abs(pTot).toFixed(0) + '%'}</div></div></div></div>
+    </div>
+    <div style="position:relative;height:${h}px;"><canvas id="compareChart"></canvas></div>
+    <div class="table-responsive mt-3" style="max-height:300px;overflow:auto;"><table class="table"><thead><tr><th>Item</th><th class="text-end">Bulan Lalu</th><th class="text-end">Bulan Ini</th><th class="text-end">Selisih</th><th class="text-end">%</th></tr></thead><tbody>
+      ${shown.map(e => { const sel = e.ini - e.lalu, p = pct(e.lalu, e.ini); return `<tr><td class="fw-bold">${esc(e.nama)}</td><td class="text-end">${fmtV(e.lalu)}</td><td class="text-end">${fmtV(e.ini)}</td><td class="text-end ${sel >= 0 ? 'text-success' : 'text-danger'}">${sel >= 0 ? '+' : '-'}${fmtV(Math.abs(sel))}</td><td class="text-end">${p === null ? (e.ini > 0 ? 'Baru' : '-') : (sel >= 0 ? '+' : '-') + Math.abs(p).toFixed(0) + '%'}</td></tr>`; }).join('')}
+    </tbody></table></div>`;
+  if (chartInstances.compare) chartInstances.compare.destroy();
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  const tc = dark ? '#9aa0bc' : '#6b7280', gc = dark ? '#262c47' : '#e5e7eb';
+  chartInstances.compare = new Chart($('#compareChart'), {
+    type: 'bar',
+    data: { labels: shown.map(e => e.nama), datasets: [
+      { label: lblLalu, data: shown.map(e => e.lalu), backgroundColor: '#94a3b8', borderRadius: 5 },
+      { label: lblIni, data: shown.map(e => e.ini), backgroundColor: '#16a34a', borderRadius: 5 } ] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { color: tc } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtV(c.parsed.x)}` } } },
+      scales: { x: { ticks: { color: tc, callback: v => qty ? fmtNum(v) : 'Rp ' + fmtNum(v) }, grid: { color: gc } }, y: { ticks: { color: tc }, grid: { display: false } } } }
+  });
 }
 
 function buildInsights({ omset, margin, opex, perPel, kel, stokAda }) {
@@ -672,6 +749,15 @@ PAGES.pengaturan = function () {
     <div class="section-card mb-3"><h6>Identitas Aplikasi & Invoice</h6><div class="row g-3">
       <div class="col-md-6"><label class="form-label">Nama Aplikasi</label><input id="cfgApp" class="form-control" value="${esc(c.appName || '')}"></div>
       <div class="col-md-6"><label class="form-label">URL Logo (dipakai juga di invoice)</label><input id="cfgLogo" class="form-control" placeholder="https://..." value="${esc(c.logoUrl || '')}"></div>
+      <div class="col-12"><div class="p-3 rounded-3" style="background:var(--bg-primary);border:1px dashed var(--border-color)">
+        <div class="d-flex flex-wrap gap-2 align-items-center">
+          <input type="file" id="cfgLogoFile" accept="image/png,image/jpeg,image/webp" class="form-control form-control-sm" style="max-width:280px">
+          <button class="btn btn-outline-accent btn-sm" id="cfgUpload" onclick="uploadLogo()"><i class="bi bi-upload"></i> Upload Logo</button>
+          <button class="btn btn-secondary btn-sm" onclick="testLogo()"><i class="bi bi-search"></i> Tes Logo</button>
+        </div>
+        <div class="small text-secondary mt-2">PNG / JPG / WebP, maks. 2 MB. Upload langsung adalah cara paling andal agar logo tampil di aplikasi <b>dan</b> invoice PDF. Tombol Tes Logo memeriksa URL yang tertulis di kolom atas.</div>
+        <div id="logoTest" class="mt-2 small"></div>
+      </div></div>
       <div class="col-md-6"><label class="form-label">Nama Perusahaan (header invoice)</label><input id="cfgPerusahaan" class="form-control" value="${esc(c.perusahaan || '')}"></div>
       <div class="col-md-6"><label class="form-label">Telepon</label><input id="cfgTelepon" class="form-control" value="${esc(c.telepon || '')}"></div>
       <div class="col-12"><label class="form-label">Alamat</label><input id="cfgAlamat" class="form-control" value="${esc(c.alamat || '')}"></div>
@@ -687,8 +773,38 @@ async function saveConfig() {
   const rows = [['appName', 'cfgApp'], ['logoUrl', 'cfgLogo'], ['perusahaan', 'cfgPerusahaan'], ['telepon', 'cfgTelepon'], ['alamat', 'cfgAlamat']].map(([key, id]) => ({ key, value: $('#' + id).value.trim() }));
   const btn = $('#cfgSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
   const r = await callSb(sb.from('app_config').upsert(rows, { onConflict: 'key' }), 'Pengaturan disimpan.'); setBtnBusy(btn, false);
-  if (r.success) { rows.forEach(x => AppState.config[x.key] = x.value); applyConfig(); }
+  if (r.success) { rows.forEach(x => AppState.config[x.key] = x.value); applyConfig(); testLogo(); }
 }
+/* Tes URL logo: apakah tampil di aplikasi, dan apakah bisa dipakai di PDF (butuh izin CORS dari server gambar) */
+async function testLogo() {
+  const url = $('#cfgLogo').value.trim(), box = $('#logoTest');
+  if (!url) { box.innerHTML = '<span class="text-secondary">Belum ada URL logo. Isi URL atau upload file.</span>'; return; }
+  box.innerHTML = '<span class="text-secondary">Menguji logo...</span>';
+  const display = await new Promise(res => { const i = new Image(); const t = setTimeout(() => res(false), 8000); i.onload = () => { clearTimeout(t); res(true); }; i.onerror = () => { clearTimeout(t); res(false); }; i.src = url; });
+  const pdf = display ? !!(await loadImageDataUrl(url)) : false;
+  const ok = t => `<div class="text-success"><i class="bi bi-check-circle-fill"></i> ${t}</div>`, bad = t => `<div class="text-danger"><i class="bi bi-x-circle-fill"></i> ${t}</div>`;
+  box.innerHTML = (display ? `<img src="${esc(url)}" alt="Pratinjau" style="height:56px;max-width:160px;object-fit:contain;background:#fff;border-radius:8px;padding:4px;border:1px solid var(--border-color)" class="mb-2 d-block">` : '') +
+    (display ? ok('Tampil di aplikasi (navbar & login).') : bad('Tidak tampil: URL ini bukan link gambar langsung (biasanya link halaman / share dari Google Drive, Google Photos, Canva, ibb.co, dll). Gunakan Upload Logo.')) +
+    (display ? (pdf ? ok('Bisa dipakai di invoice PDF.') : bad('Tidak bisa dipakai di invoice PDF: server gambar memblokir akses lintas-situs. Gunakan Upload Logo.')) : '');
+}
+
+/* Upload logo ke Supabase Storage (bucket publik "app-assets") lalu simpan URL-nya di pengaturan */
+async function uploadLogo() {
+  const f = $('#cfgLogoFile').files[0];
+  if (!f) return showToast('Validasi', 'Pilih file logo terlebih dahulu.', 'warning');
+  if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return showToast('Validasi', 'Format harus PNG, JPG, atau WebP.', 'warning');
+  if (f.size > 2 * 1024 * 1024) return showToast('Validasi', 'Ukuran file maksimal 2 MB.', 'warning');
+  const ext = f.type === 'image/png' ? 'png' : f.type === 'image/webp' ? 'webp' : 'jpg';
+  const path = `logo/logo-${Date.now()}.${ext}`;
+  const btn = $('#cfgUpload'); setBtnBusy(btn, true, 'Mengunggah...');
+  const up = await callSb(sb.storage.from('app-assets').upload(path, f, { contentType: f.type, cacheControl: '3600', upsert: false }));
+  if (!up.success) { setBtnBusy(btn, false); return; }
+  const url = sb.storage.from('app-assets').getPublicUrl(path).data.publicUrl;
+  const sv = await callSb(sb.from('app_config').upsert({ key: 'logoUrl', value: url }, { onConflict: 'key' }), 'Logo diunggah dan disimpan.');
+  setBtnBusy(btn, false);
+  if (sv.success) { AppState.config.logoUrl = url; $('#cfgLogo').value = url; applyConfig(); $('#cfgLogoFile').value = ''; testLogo(); }
+}
+
 async function loadUsers() {
   const r = await callSb(sb.from('profiles').select('*').order('created_at'), null, { silent: true });
   const box = $('#userList'); if (!box) return;
@@ -849,6 +965,7 @@ async function buildInvoiceDoc(o) {
 
   // ── Header kiri: logo + identitas ──
   const logo = await loadImageDataUrl(cfg.logoUrl);
+  if (cfg.logoUrl && !logo) showToast('Logo invoice', 'Logo tidak bisa dimuat ke PDF (server gambar memblokir akses). Pakai Upload Logo di Pengaturan.', 'warning');
   let drawn = false;
   if (logo) { try { const s = 22, r = Math.min(s / logo.w, s / logo.h); const w = logo.w * r, h = logo.h * r; doc.addImage(logo.data, 'PNG', ML + (s - w) / 2, 12 + (s - h) / 2, w, h); drawn = true; } catch (e) { } }
   if (!drawn) { doc.setFillColor(...C.accent); doc.roundedRect(ML, 12, 22, 22, 4, 4, 'F'); doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(255, 255, 255).text('3WT', ML + 11, 25.5, { align: 'center' }); }
