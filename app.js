@@ -1083,6 +1083,12 @@ async function generateInvoiceKarjo(btn) {
       const qty = num(i.jumlah), harga = num(b.harga_karjo);
       return { kode: kodeBarang(i), nama: i.nama_barang, qty, satuan: i.satuan || b.satuan || '-', harga, subtotal: qty * harga, stang: isStang(b), prod: b.diproduksi_oleh === 'Karjo' ? 0 : 1 };
     });
+    // Gabungkan item bernama sama dalam satu tanggal (mis. dikirim ke dua pelanggan berbeda): qty & jumlah dijumlahkan
+    groups.forEach(g => {
+      const m = new Map();
+      g.items.forEach(it => { const e = m.get(it.nama); if (e) { e.qty += it.qty; e.subtotal += it.subtotal; } else m.set(it.nama, { ...it }); });
+      g.items = [...m.values()];
+    });
     groups.forEach(g => g.items.sort((x, y) => x.prod - y.prod));   // produksi Karjo di atas, produksi 3-WRT menyusul (sort stabil)
     if (!groups.length) return showToast('Info', 'Tidak ada barang keluar bertanda "Relevan Produksi Karjo" pada periode tersebut.', 'warning');
 
