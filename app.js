@@ -16,7 +16,7 @@ const AppState = { user: null, profile: null, role: null, config: {}, masterBara
 let chartInstances = {};
 let bootedUserId = null;
 let dashboardFilter = { from: null, to: null };
-let dashData = { keluar: [], masuk: [], from: '', to: '' };
+let dashData = { keluar: [], masuk: [], opex: [], from: '', to: '' };
 let riwayatMap = {};
 let kasirEditId = null;
 let masukEditId = null;
@@ -254,16 +254,14 @@ let top10Data = [];
 async function loadDashboard() {
   const body = $('#dashboardBody'); body.innerHTML = spinnerBlock();
   const from = dashboardFilter.from || firstOfMonthStr(), to = dashboardFilter.to || todayStr();
-  const now = new Date(), om = now.getMonth() + 1, oy = now.getFullYear();
-  const opexFrom = `${oy}-${pad(om)}-01`, opexTo = dateToStr(new Date(oy, om, 0));
   const [kel, mas, hari, opx] = await Promise.all([
     callSb(sb.from('barang_keluar').select('id,tanggal,pelanggan_id,pelanggan_nama,total,total_margin,barang_keluar_item(nama_barang,satuan,jumlah,subtotal)').gte('tanggal', from).lte('tanggal', to), null, { silent: true }),
     callSb(sb.from('barang_masuk').select('id,tanggal,sumber_id,sumber_nama,barang_masuk_item(nama_barang,satuan,jumlah)').gte('tanggal', from).lte('tanggal', to), null, { silent: true }),
     callSb(sb.from('barang_keluar').select('id,pelanggan_nama,total,barang_keluar_item(nama_barang,satuan,jumlah)').eq('tanggal', todayStr()), null, { silent: true }),
-    callSb(sb.from('biaya_operasional').select('total').gte('tanggal', opexFrom).lte('tanggal', opexTo), null, { silent: true })
+    callSb(sb.from('biaya_operasional').select('tanggal,nama_biaya,satuan,jumlah,total').gte('tanggal', from).lte('tanggal', to).order('tanggal').order('created_at'), null, { silent: true })
   ]);
   if (![kel, mas, hari, opx].every(r => r.success)) { body.innerHTML = errBox('Gagal memuat data dashboard.', 'loadDashboard()'); return; }
-  dashData = { keluar: kel.data, masuk: mas.data, from, to };
+  dashData = { keluar: kel.data, masuk: mas.data, opex: opx.data, from, to };
 
   const omset = kel.data.reduce((s, k) => s + num(k.total), 0);
   const margin = kel.data.reduce((s, k) => s + num(k.total_margin), 0);
@@ -289,7 +287,7 @@ async function loadDashboard() {
     <div class="row g-3 mb-3">
       ${kpi('kpi-purple', 'bi-cash-stack', 'Omset Periode', fmtRupiah(omset))}
       ${kpi('kpi-green', 'bi-graph-up-arrow', 'Margin Periode', fmtRupiah(margin))}
-      ${kpi('kpi-orange', 'bi-wallet2', 'Biaya Operasional Bulan Ini', fmtRupiah(opex))}
+      ${kpi('kpi-orange', 'bi-wallet2', 'Biaya Operasional Periode', fmtRupiah(opex), '<button class="kpi-btn" onclick="showDetailBiaya()">Detail</button>')}
       ${kpi('kpi-blue', 'bi-box-arrow-in-down', 'Barang Masuk (Qty)', fmtNum(qtyMasuk))}
       ${kpi('kpi-teal', 'bi-boxes', 'Jenis Barang Berstok', fmtNum(stokAda.length), '<button class="kpi-btn" onclick="showDetailStok()">Detail</button>')}
       ${kpi('kpi-pink', 'bi-calendar-check', 'Omset Hari Ini', fmtRupiah(omsetHariIni))}
@@ -416,7 +414,7 @@ function buildInsights({ omset, margin, opex, perPel, kel, stokAda }) {
     if (top && top.omset > 0 && omset > 0) out.push({ text: `Pelanggan terbesar: <b>${esc(top.nama)}</b> (${(top.omset / omset * 100).toFixed(0)}% omset).` });
     if (top10Data[0]) out.push({ text: `Barang terlaris: <b>${esc(top10Data[0].nama)}</b> (${fmtNum(top10Data[0].qty)} unit).` });
   }
-  if (opex > 0) out.push({ text: `Perbandingan kasar: margin periode ${fmtRupiah(margin)} vs biaya operasional bulan ini ${fmtRupiah(opex)} (selisih ${fmtRupiah(margin - opex)}).`, warn: margin < opex });
+  if (opex > 0) out.push({ text: `Margin periode ${fmtRupiah(margin)} dibanding biaya operasional periode ${fmtRupiah(opex)}: selisih ${fmtRupiah(margin - opex)}.`, warn: margin < opex });
   const tipis = AppState.masterBarang.filter(b => b.status === 'Aktif' && num(b.stok) <= 5);
   if (tipis.length) out.push({ text: `<b>${tipis.length}</b> barang aktif stoknya ≤ 5: ${tipis.slice(0, 3).map(b => esc(b.nama)).join(', ')}${tipis.length > 3 ? ', ...' : ''}.`, warn: true });
   const tanpaHpp = AppState.masterBarang.filter(b => b.status === 'Aktif' && b.hpp == null).length;
@@ -452,6 +450,14 @@ function showDetailSumber(id) {
   const list = aggItems(dashData.masuk.filter(m => m.sumber_id === id), 'barang_masuk_item');
   showDetail('Detail Barang Masuk — ' + (s ? s.nama : ''), `<p class="small text-secondary">Periode ${tglSingkat(dashData.from)} – ${tglSingkat(dashData.to)}</p>` +
     (list.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>Barang</th><th class="text-end">Qty</th></tr></thead><tbody>${list.map(i => `<tr><td>${esc(i.nama)}</td><td class="text-end">${fmtNum(i.qty)} ${esc(i.satuan || '')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="text-secondary">Tidak ada barang masuk.</p>'));
+}
+function showDetailBiaya() {
+  const rows = dashData.opex || [], total = rows.reduce((s, r) => s + num(r.total), 0);
+  showDetail('Riwayat Biaya Operasional', `<p class="small text-secondary">Periode ${tglSingkat(dashData.from)} – ${tglSingkat(dashData.to)}</p>` +
+    (rows.length ? `<div class="table-responsive"><table class="table"><thead><tr><th>Hari</th><th>Tanggal</th><th>Nama Biaya</th><th class="text-end">Jumlah</th><th class="text-end">Total</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td>${HARI_ID[parseDate(r.tanggal).getDay()]}</td><td>${tglSingkat(r.tanggal)}</td><td class="fw-bold">${esc(r.nama_biaya)}</td><td class="text-end">${fmtNum(r.jumlah)} ${esc(r.satuan || '')}</td><td class="text-end">${fmtRupiah(r.total)}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="4" class="fw-bold text-end">Total</td><td class="fw-bold text-end">${fmtRupiah(total)}</td></tr></tfoot></table></div>`
+      : '<p class="text-secondary">Tidak ada biaya operasional pada periode ini.</p>'));
 }
 function showDetailStok() {
   const list = AppState.masterBarang.filter(b => num(b.stok) > 0);
