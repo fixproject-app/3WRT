@@ -5,8 +5,8 @@
    (agar memperbarui app.js tidak menimpa konfigurasi Anda).
    ============================================================ */
 const CFG = window.APP_CONFIG || {};
-const SUPABASE_URL = String(CFG.SUPABASE_URL || 'https://fcozeothaqyyjfqehbde.supabase.co').trim();
-const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp').trim();
+const SUPABASE_URL = String(CFG.SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || '').trim();
 const CONFIG_OK = /^https:\/\/\S+$/.test(SUPABASE_URL) && !/XXXX/.test(SUPABASE_URL) &&
                   SUPABASE_ANON_KEY.length > 40 && !/\s/.test(SUPABASE_ANON_KEY) && !/ISI_ANON/.test(SUPABASE_ANON_KEY);
 const sb = CONFIG_OK ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
@@ -196,6 +196,7 @@ async function bootApp(user) {
 }
 
 async function loadMasterCaches() {
+  Object.keys(langgananCache).forEach(k => delete langgananCache[k]);
   const admin = AppState.role === 'admin';
   const reqs = [
     callSb(sb.from('master_barang').select('*').order('nama'), null, { silent: true }),
@@ -511,14 +512,19 @@ function collectItems(withHarga) {
 
 /* ───────────────────────── KASIR (BARANG KELUAR) ───────────────────────── */
 PAGES.kasir = function (rec) {
+  searchWithHarga = true;
   const edit = rec && rec.id ? rec : null; kasirEditId = edit ? edit.id : null;
   const pel = AppState.masterPelanggan.filter(p => p.status === 'Aktif' || (edit && p.id === edit.pihak_id));
   $('#app-container').innerHTML = `<div class="section-card">
     ${edit ? '<div class="alert alert-warning py-2 small"><i class="bi bi-pencil-square"></i> Mode edit transaksi. Stok akan dikoreksi otomatis saat disimpan.</div>' : ''}
     <div class="row g-3 mb-3">
       <div class="col-md-4"><label class="form-label">Tanggal</label><input type="date" id="kTanggal" class="form-control" value="${edit ? edit.tanggal : todayStr()}"></div>
-      <div class="col-md-8"><label class="form-label">Pelanggan</label><select id="kPelanggan" class="form-select"><option value="">-- Pilih Pelanggan --</option>${pel.map(p => `<option value="${p.id}" ${edit && edit.pihak_id === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}</select></div>
+      <div class="col-md-8"><label class="form-label">Pelanggan</label><select id="kPelanggan" class="form-select" onchange="loadLangganan(this.value)"><option value="">-- Pilih Pelanggan --</option>${pel.map(p => `<option value="${p.id}" ${edit && edit.pihak_id === p.id ? 'selected' : ''}>${esc(p.nama)}</option>`).join('')}</select></div>
     </div>
+    <div id="kLangganan" class="mb-3"></div>
+    <div class="mb-3"><label class="form-label">Cari Barang (kode atau nama)</label>
+      <div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input id="kSearch" class="form-control" placeholder="Ketik kode, mis. STW1 atau STW 1 — Enter untuk menambah" autocomplete="off" oninput="kasirSearch()" onkeydown="kasirSearchKey(event)"></div>
+      <div id="kResults" class="k-results" style="display:none"></div></div>
     <label class="form-label">Item Barang</label>
     <div class="item-list">${edit ? edit.items.map(i => itemRowHtml(i, true)).join('') : itemRowHtml(null, true)}</div>
     <button class="btn btn-outline-accent btn-sm mb-3" onclick="addRow(true)"><i class="bi bi-plus-lg"></i> Tambah Barang</button>
@@ -528,7 +534,76 @@ PAGES.kasir = function (rec) {
       <div>${edit ? '<button class="btn btn-secondary me-2" onclick="navigateTo(\'riwayat\')">Batal</button>' : ''}<button class="btn btn-accent px-4" id="kSimpan" onclick="submitKasir()"><i class="bi bi-check2-circle"></i> ${edit ? 'Simpan Perubahan' : 'Simpan Transaksi'}</button></div>
     </div></div>`;
   updateListTotal();
+  if (edit && edit.pihak_id) loadLangganan(edit.pihak_id);
 };
+/* ── Pencarian cepat di Kasir: kode (STW1 / "STW 1" / "stw") atau nama ── */
+const normKode = s => String(s || '').toLowerCase().replace(/[\s\-_.\/]/g, '');
+function kasirMatches(q) {
+  const nq = normKode(q); if (!nq) return [];
+  const tokens = String(q).toLowerCase().split(/\s+/).filter(Boolean), out = [];
+  AppState.masterBarang.forEach(b => {
+    if (b.status !== 'Aktif') return;
+    const k = normKode(b.kode), n = String(b.nama).toLowerCase(); let score = 0;
+    if (k && k === nq) score = 100; else if (k && k.startsWith(nq)) score = 80; else if (k && k.includes(nq)) score = 60;
+    else if (tokens.every(t => n.includes(t))) score = 40; else if (normKode(b.nama).includes(nq)) score = 30;
+    if (score) out.push({ b, score });
+  });
+  return out.sort((a, b) => b.score - a.score || a.b.nama.localeCompare(b.b.nama, 'id')).slice(0, 8).map(x => x.b);
+}
+const fotoThumb = b => b.foto_url ? `<img src="${esc(b.foto_url)}" class="thumb" loading="lazy" alt="">` : '<div class="thumb thumb-empty"><i class="bi bi-image"></i></div>';
+function kasirSearch() {
+  const box = $('#kResults'), q = $('#kSearch').value;
+  if (!q.trim()) { box.style.display = 'none'; return; }
+  const list = kasirMatches(q); box.style.display = 'block';
+  box.innerHTML = list.length ? list.map((b, i) => `<div class="k-result ${i === 0 ? 'first' : ''}" onclick="kasirPick('${b.id}')">${fotoThumb(b)}<div class="flex-grow-1"><div class="fw-bold small">${b.kode ? `<span class="k-kode">${esc(b.kode)}</span> ` : ''}${esc(b.nama)}</div><div class="small ${num(b.stok) <= 0 ? 'text-danger' : 'text-secondary'}">Stok ${fmtNum(b.stok)} ${esc(b.satuan)}${searchWithHarga ? ' · ' + fmtRupiah(b.harga_jual) : ''}</div></div><i class="bi bi-plus-circle-fill text-success fs-5"></i></div>`).join('') : '<div class="small text-secondary p-2">Tidak ditemukan.</div>';
+}
+function kasirSearchKey(e) {
+  if (e.key === 'Enter') { e.preventDefault(); const l = kasirMatches($('#kSearch').value); if (l[0]) kasirPick(l[0].id); }
+  else if (e.key === 'Escape') { $('#kSearch').value = ''; kasirSearch(); }
+}
+function kasirPick(id) { kasirAddBarang(id); $('#kSearch').value = ''; kasirSearch(); $('#kSearch').focus(); }
+function kasirAddBarang(id) {
+  const list = $('.item-list'), rows = [...list.querySelectorAll('.item-row')];
+  let row = rows.find(r => r.querySelector('.r-barang').value === id);
+  if (row) { const q = row.querySelector('.r-qty'); q.value = num(q.value) + 1; onRowChange(q); flashRow(row); return; }
+  row = rows.find(r => !r.querySelector('.r-barang').value && !r.querySelector('.r-qty').value);
+  if (!row) { list.insertAdjacentHTML('beforeend', itemRowHtml(null, searchWithHarga)); row = list.lastElementChild; }
+  const sel = row.querySelector('.r-barang'); sel.value = id; row.querySelector('.r-qty').value = 1; onRowChange(sel); flashRow(row);
+}
+/* ── Barang langganan per pelanggan (paling sering dikirim) ── */
+const langgananCache = {};
+async function loadLangganan(pelId) {
+  const box = $('#kLangganan'); if (!box) return;
+  if (!pelId) { box.innerHTML = ''; return; }
+  box.innerHTML = '<div class="small text-secondary">Memuat barang langganan...</div>';
+  if (!langgananCache[pelId]) {
+    const r = await callSb(sb.from('barang_keluar').select('barang_keluar_item(barang_id,jumlah)').eq('pelanggan_id', pelId).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(150), null, { silent: true });
+    if (!r.success) { box.innerHTML = ''; return; }
+    const agg = {};
+    r.data.forEach(t => {
+      const seen = new Set();
+      (t.barang_keluar_item || []).forEach(i => {
+        if (!i.barang_id) return;
+        const a = agg[i.barang_id] = agg[i.barang_id] || { id: i.barang_id, kali: 0, qty: 0 };
+        a.qty += num(i.jumlah); if (!seen.has(i.barang_id)) { a.kali++; seen.add(i.barang_id); }
+      });
+    });
+    langgananCache[pelId] = Object.values(agg).sort((a, b) => b.kali - a.kali || b.qty - a.qty);
+  }
+  if (!$('#kLangganan') || $('#kPelanggan').value !== pelId) return;   // pelanggan sudah diganti saat memuat
+  const bMap = new Map(AppState.masterBarang.map(b => [b.id, b]));
+  const top = langgananCache[pelId].map(a => ({ a, b: bMap.get(a.id) })).filter(x => x.b && x.b.status === 'Aktif').slice(0, 6);
+  const pel = AppState.masterPelanggan.find(p => p.id === pelId);
+  box.innerHTML = top.length ? `<div class="langganan"><div class="small fw-bold mb-2"><i class="bi bi-star-fill text-warning"></i> Langganan ${esc(pel ? pel.nama : '')} <span class="text-secondary fw-normal">— ketuk untuk menambah</span></div><div class="lg-grid">${top.map(({ a, b }) => `<div class="lg-item" onclick="kasirAddBarang('${b.id}')">${fotoThumb(b)}<div><div class="lg-nama">${b.kode ? `<span class="k-kode">${esc(b.kode)}</span> ` : ''}${esc(b.nama)}</div><div class="small ${num(b.stok) <= 0 ? 'text-danger' : 'text-secondary'}">${a.kali}× dikirim · stok ${fmtNum(b.stok)}</div></div></div>`).join('')}</div></div>`
+    : '<div class="small text-secondary">Belum ada riwayat pengiriman untuk pelanggan ini.</div>';
+}
+function flashRow(row) { row.classList.add('flash'); setTimeout(() => row.classList.remove('flash'), 800); }
+let searchWithHarga = true;
+function kasirSearchHtml() {
+  return `<div class="mb-3"><label class="form-label">Cari Barang (kode atau nama)</label>
+      <div class="input-group"><span class="input-group-text"><i class="bi bi-search"></i></span><input id="kSearch" class="form-control" placeholder="Ketik kode, mis. STW1 atau STW 1 — Enter untuk menambah" autocomplete="off" oninput="kasirSearch()" onkeydown="kasirSearchKey(event)"></div>
+      <div id="kResults" class="k-results" style="display:none"></div></div>`;
+}
 async function submitKasir() {
   const pel = $('#kPelanggan').value, tgl = $('#kTanggal').value;
   if (!tgl || !pel) return showToast('Validasi', 'Tanggal dan pelanggan wajib diisi.', 'warning');
@@ -542,6 +617,7 @@ async function submitKasir() {
 
 /* ───────────────────────── BARANG MASUK ───────────────────────── */
 PAGES.barangMasuk = function (rec) {
+  searchWithHarga = false;
   const edit = rec && rec.id ? rec : null; masukEditId = edit ? edit.id : null;
   const sum = AppState.masterSumber.filter(s => s.status === 'Aktif' || (edit && s.id === edit.pihak_id));
   $('#app-container').innerHTML = `<div class="section-card">
@@ -550,6 +626,7 @@ PAGES.barangMasuk = function (rec) {
       <div class="col-md-4"><label class="form-label">Tanggal</label><input type="date" id="mTanggal" class="form-control" value="${edit ? edit.tanggal : todayStr()}"></div>
       <div class="col-md-8"><label class="form-label">Sumber</label><select id="mSumber" class="form-select"><option value="">-- Pilih Sumber --</option>${sum.map(s => `<option value="${s.id}" ${edit && edit.pihak_id === s.id ? 'selected' : ''}>${esc(s.nama)}</option>`).join('')}</select></div>
     </div>
+    ${kasirSearchHtml()}
     <label class="form-label">Item Barang</label>
     <div class="item-list">${edit ? edit.items.map(i => itemRowHtml(i, false)).join('') : itemRowHtml(null, false)}</div>
     <button class="btn btn-outline-accent btn-sm mb-3" onclick="addRow(false)"><i class="bi bi-plus-lg"></i> Tambah Barang</button>
@@ -580,11 +657,12 @@ PAGES.stok = function () {
 function renderStokTable() {
   const q = ($('#stokSearch') ? $('#stokSearch').value : '').toLowerCase();
   const list = AppState.masterBarang.filter(b => !q || (b.nama || '').toLowerCase().includes(q) || (b.kode || '').toLowerCase().includes(q));
-  $('#stokTable').innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Kode</th><th>Nama</th><th>Kategori</th><th>Diproduksi</th><th>Satuan</th><th class="text-end">Harga Jual</th><th class="text-end">Harga Karjo</th><th class="text-end">HPP</th><th class="text-end">Margin</th><th class="text-end">Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
-    ${list.map(b => `<tr><td>${esc(b.kode || '-')}</td><td class="fw-bold">${esc(b.nama)}</td><td>${esc(b.kategori || '-')}</td><td><span class="badge-status ${b.diproduksi_oleh === 'Karjo' ? '' : 'badge-ok'}" ${b.diproduksi_oleh === 'Karjo' ? 'style="background:rgba(217,119,6,.15);color:#d97706"' : ''}>${esc(b.diproduksi_oleh || '3-WRT')}</span></td><td>${esc(b.satuan)}</td><td class="text-end">${fmtRupiah(b.harga_jual)}</td><td class="text-end">${b.relevan_karjo ? fmtRupiah(b.harga_karjo) : '-'}</td><td class="text-end">${b.hpp == null ? '-' : fmtRupiah(b.hpp)}</td><td class="text-end">${b.margin == null ? '-' : fmtRupiah(b.margin)}</td><td class="text-end"><span class="badge-status ${num(b.stok) <= 5 ? 'badge-low' : 'badge-ok'}">${fmtNum(b.stok)}</span></td><td>${badgeStatus(b.status)}</td><td><button class="action-btn edit" onclick="openBarangForm('${b.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteBarang('${b.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="12" class="text-center text-secondary py-4">Belum ada barang.</td></tr>'}
+  $('#stokTable').innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Foto</th><th>Kode</th><th>Nama</th><th>Kategori</th><th>Diproduksi</th><th>Satuan</th><th class="text-end">Harga Jual</th><th class="text-end">Harga Karjo</th><th class="text-end">HPP</th><th class="text-end">Margin</th><th class="text-end">Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+    ${list.map(b => `<tr><td>${b.foto_url ? `<img src="${esc(b.foto_url)}" class="thumb" loading="lazy" onclick="showFoto('${b.id}')" alt="">` : '<div class="thumb thumb-empty"><i class="bi bi-image"></i></div>'}</td><td>${esc(b.kode || '-')}</td><td class="fw-bold">${esc(b.nama)}</td><td>${esc(b.kategori || '-')}</td><td><span class="badge-status ${b.diproduksi_oleh === 'Karjo' ? '' : 'badge-ok'}" ${b.diproduksi_oleh === 'Karjo' ? 'style="background:rgba(217,119,6,.15);color:#d97706"' : ''}>${esc(b.diproduksi_oleh || '3-WRT')}</span></td><td>${esc(b.satuan)}</td><td class="text-end">${fmtRupiah(b.harga_jual)}</td><td class="text-end">${b.relevan_karjo ? fmtRupiah(b.harga_karjo) : '-'}</td><td class="text-end">${b.hpp == null ? '-' : fmtRupiah(b.hpp)}</td><td class="text-end">${b.margin == null ? '-' : fmtRupiah(b.margin)}</td><td class="text-end"><span class="badge-status ${num(b.stok) <= 5 ? 'badge-low' : 'badge-ok'}">${fmtNum(b.stok)}</span></td><td>${badgeStatus(b.status)}</td><td><button class="action-btn edit" onclick="openBarangForm('${b.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteBarang('${b.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="13" class="text-center text-secondary py-4">Belum ada barang.</td></tr>'}
   </tbody></table></div>`;
 }
 function openBarangForm(id) {
+  fbFotoBlob = null;
   const b = id ? AppState.masterBarang.find(x => x.id === id) : null;
   showForm(b ? 'Edit Barang' : 'Tambah Barang', `<div class="row g-3">
     <div class="col-md-4"><label class="form-label">Kode Item</label><input id="fbKode" class="form-control" placeholder="mis. STS1" value="${esc(b ? b.kode || '' : '')}"></div>
@@ -599,17 +677,62 @@ function openBarangForm(id) {
     <div class="col-md-4"><label class="form-label">Status</label><select id="fbStatus" class="form-select"><option ${b && b.status === 'Nonaktif' ? '' : 'selected'}>Aktif</option><option ${b && b.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option></select></div>
     <div class="col-md-4"><label class="form-label">Diproduksi oleh</label><select id="fbProduksi" class="form-select"><option value="3-WRT" ${b && b.diproduksi_oleh === 'Karjo' ? '' : 'selected'}>3-WRT</option><option value="Karjo" ${b && b.diproduksi_oleh === 'Karjo' ? 'selected' : ''}>Karjo</option></select></div>
     <div class="col-md-8 small text-secondary align-self-end">"Ditagih ke Karjo" menentukan barang muncul di badan invoice Karjo (dengan Harga Karjo). "Diproduksi oleh" hanya menentukan masuk tabel rekap PRODUKSI KARJO atau PRODUKSI 3-WRT. Keduanya bebas dikombinasikan.</div>
+    <div class="col-12"><label class="form-label">Foto Barang</label><div class="d-flex gap-3 align-items-center flex-wrap">
+      <img id="fbFotoPrev" class="thumb-lg" alt="" src="${b && b.foto_url ? esc(b.foto_url) : ''}" style="${b && b.foto_url ? '' : 'display:none'}">
+      <div><input type="file" id="fbFotoFile" accept="image/*" class="form-control form-control-sm" onchange="onFotoPicked(this)">
+        <div class="small text-secondary mt-1" id="fbFotoInfo">Foto otomatis dikompres (maks. 1 MB) agar tetap jelas dan ringan.</div>
+        ${b && b.foto_url ? '<div class="form-check mt-1"><input class="form-check-input" type="checkbox" id="fbFotoHapus"><label class="form-check-label small" for="fbFotoHapus">Hapus foto saat ini</label></div>' : ''}</div></div></div>
     <div class="col-12 text-end"><button class="btn btn-secondary me-2" data-bs-dismiss="modal">Batal</button><button class="btn btn-accent" id="fbSimpan" onclick="saveBarang('${id || ''}')">Simpan</button></div>
   </div>`);
 }
+/* ── Foto barang: kompres otomatis (maks. ~1 MB) lalu unggah ke Storage ── */
+let fbFotoBlob = null;
+const ukuranFile = n => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.round(n / 1024) + ' KB';
+async function kompresFoto(file, maxBytes = 950 * 1024) {
+  let bmp;
+  try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch (e) { bmp = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = URL.createObjectURL(file); }); }
+  const w0 = bmp.width || bmp.naturalWidth, h0 = bmp.height || bmp.naturalHeight;
+  let scale = Math.min(1, 1280 / Math.max(w0, h0)), q = 0.86, blob = null;
+  for (let i = 0; i < 14; i++) {
+    const c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w0 * scale)); c.height = Math.max(1, Math.round(h0 * scale));
+    const ctx = c.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); ctx.drawImage(bmp, 0, 0, c.width, c.height);
+    blob = await new Promise(r => c.toBlob(r, 'image/jpeg', q));
+    if (blob && blob.size <= maxBytes) return blob;
+    if (q > 0.62) q -= 0.08; else scale *= 0.85;
+  }
+  if (blob && blob.size <= 1048576) return blob;
+  throw new Error('Gambar terlalu besar');
+}
+async function onFotoPicked(inp) {
+  const f = inp.files[0], info = $('#fbFotoInfo'); fbFotoBlob = null; if (!f) return;
+  if (!/^image\//.test(f.type)) { info.textContent = 'File harus berupa gambar.'; inp.value = ''; return; }
+  info.textContent = 'Mengompres foto...';
+  try {
+    fbFotoBlob = await kompresFoto(f);
+    const prev = $('#fbFotoPrev'); prev.src = URL.createObjectURL(fbFotoBlob); prev.style.display = '';
+    info.innerHTML = `Dikompres: <b>${ukuranFile(f.size)}</b> → <b>${ukuranFile(fbFotoBlob.size)}</b>. Klik Simpan untuk mengunggah.`;
+  } catch (e) { info.textContent = 'Gagal memproses gambar. Coba file JPG/PNG lain.'; inp.value = ''; }
+}
+function showFoto(id) { const b = AppState.masterBarang.find(x => x.id === id); if (b && b.foto_url) showDetail(b.nama, `<img src="${esc(b.foto_url)}" class="img-fluid rounded w-100" alt="${esc(b.nama)}">`); }
+
 async function saveBarang(id) {
   const g = i => $('#' + i).value.trim();
   if (!g('fbNama')) return showToast('Validasi', 'Nama barang wajib diisi.', 'warning');
   const payload = { kode: g('fbKode').toUpperCase() || null, nama: g('fbNama'), kategori: g('fbKategori') || null, satuan: g('fbSatuan') || 'PCS', harga_jual: num(g('fbHarga')), harga_karjo: num(g('fbHargaKarjo')), relevan_karjo: g('fbRelevan') === 'Ya', hpp: g('fbHpp') === '' ? null : num(g('fbHpp')), diproduksi_oleh: g('fbProduksi'), status: g('fbStatus') };
+  const old = id ? AppState.masterBarang.find(x => x.id === id) : null, btn0 = $('#fbSimpan'); let oldPath = null;
+  setBtnBusy(btn0, true, 'Menyimpan...');
+  if (fbFotoBlob) {
+    const path = `barang/${id || crypto.randomUUID()}-${Date.now()}.jpg`;
+    const up = await callSb(sb.storage.from('app-assets').upload(path, fbFotoBlob, { contentType: 'image/jpeg', cacheControl: '31536000', upsert: false }));
+    if (!up.success) { setBtnBusy(btn0, false); return; }
+    payload.foto_url = sb.storage.from('app-assets').getPublicUrl(path).data.publicUrl; payload.foto_path = path; oldPath = old && old.foto_path;
+  } else if (id && $('#fbFotoHapus') && $('#fbFotoHapus').checked) { payload.foto_url = null; payload.foto_path = null; oldPath = old && old.foto_path; }
   let q; if (id) q = sb.from('master_barang').update(payload).eq('id', id); else { payload.stok = num(g('fbStok')); q = sb.from('master_barang').insert(payload); }
-  const btn = $('#fbSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
+  const btn = btn0;
   const r = await callSb(q, 'Barang disimpan.'); setBtnBusy(btn, false);
-  if (r.success) { hideForm(); await loadMasterCaches(); renderStokTable(); }
+  if (!r.success && payload.foto_path && (!old || payload.foto_path !== old.foto_path)) sb.storage.from('app-assets').remove([payload.foto_path]);
+  if (r.success) { if (oldPath) sb.storage.from('app-assets').remove([oldPath]); hideForm(); await loadMasterCaches(); renderStokTable(); }
 }
 function deleteBarang(id) {
   const b = AppState.masterBarang.find(x => x.id === id);
