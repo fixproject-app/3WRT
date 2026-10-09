@@ -5,8 +5,8 @@
    (agar memperbarui app.js tidak menimpa konfigurasi Anda).
    ============================================================ */
 const CFG = window.APP_CONFIG || {};
-const SUPABASE_URL = String(CFG.SUPABASE_URL || '').trim();
-const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || '').trim();
+const SUPABASE_URL = String(CFG.SUPABASE_URL || 'https://fcozeothaqyyjfqehbde.supabase.co').trim();
+const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp').trim();
 const CONFIG_OK = /^https:\/\/\S+$/.test(SUPABASE_URL) && !/XXXX/.test(SUPABASE_URL) &&
                   SUPABASE_ANON_KEY.length > 40 && !/\s/.test(SUPABASE_ANON_KEY) && !/ISI_ANON/.test(SUPABASE_ANON_KEY);
 const sb = CONFIG_OK ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
