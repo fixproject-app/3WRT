@@ -12,7 +12,7 @@ const CONFIG_OK = /^https:\/\/\S+$/.test(SUPABASE_URL) && !/XXXX/.test(SUPABASE_
 const sb = CONFIG_OK ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 /* ───────────────────────── STATE ───────────────────────── */
-const AppState = { user: null, profile: null, role: null, config: {}, masterBarang: [], masterPelanggan: [], masterSumber: [], masterBiaya: [], currentPage: 'dashboard' };
+const AppState = { user: null, profile: null, role: null, config: {}, masterBarang: [], masterPelanggan: [], masterSumber: [], masterBiaya: [], masterMaterial: [], masterOperator: [], currentPage: 'dashboard' };
 let chartInstances = {};
 let bootedUserId = null;
 let dashboardFilter = { from: null, to: null };
@@ -27,6 +27,7 @@ const MENU = {
     { id: 'kasir',        icon: 'bi-cart-check',        label: 'Barang Keluar (Kasir)' },
     { id: 'barangMasuk',  icon: 'bi-box-arrow-in-down', label: 'Barang Masuk' },
     { id: 'stok',         icon: 'bi-boxes',             label: 'Stok & Master Barang' },
+    { id: 'material',     icon: 'bi-tools',             label: 'Material Produksi' },
     { id: 'riwayat',      icon: 'bi-clock-history',     label: 'Riwayat Transaksi' },
     { id: 'pelanggan',    icon: 'bi-people',            label: 'Pelanggan' },
     { id: 'masterBiaya',  icon: 'bi-tags',              label: 'Master Biaya' },
@@ -201,12 +202,18 @@ async function loadMasterCaches() {
     callSb(sb.from('master_pelanggan').select('*').order('nama'), null, { silent: true }),
     callSb(sb.from('master_sumber').select('*').order('nama'), null, { silent: true })
   ];
-  if (admin) reqs.push(callSb(sb.from('master_biaya').select('*').order('keterangan'), null, { silent: true }));
-  const [b, p, s, bi] = await Promise.all(reqs);
+  if (admin) {
+    reqs.push(callSb(sb.from('master_biaya').select('*').order('keterangan'), null, { silent: true }));
+    reqs.push(callSb(sb.from('master_material').select('*').order('nama'), null, { silent: true }));
+    reqs.push(callSb(sb.from('master_operator').select('*').order('nama'), null, { silent: true }));
+  }
+  const [b, p, s, bi, mm, mo] = await Promise.all(reqs);
   if (b.success) AppState.masterBarang = b.data;
   if (p.success) AppState.masterPelanggan = p.data;
   if (s.success) AppState.masterSumber = s.data;
   if (bi && bi.success) AppState.masterBiaya = bi.data;
+  if (mm && mm.success) AppState.masterMaterial = mm.data;
+  if (mo && mo.success) AppState.masterOperator = mo.data;
 }
 
 function renderSidebarNav() {
@@ -761,6 +768,153 @@ async function loadLaporanBiaya() {
     <div class="table-responsive"><table class="table"><thead><tr><th>Tanggal</th><th>Biaya</th><th>Jenis</th><th class="text-end">Jumlah</th><th class="text-end">Total</th></tr></thead><tbody>
     ${r.data.map(b => `<tr><td>${tglSingkat(b.tanggal)}</td><td>${esc(b.nama_biaya)}</td><td>${esc(b.jenis || '-')}</td><td class="text-end">${fmtNum(b.jumlah)} ${esc(b.satuan || '')}</td><td class="text-end">${fmtRupiah(b.total)}</td></tr>`).join('')}</tbody></table></div>`;
 }
+
+/* ───────────────────────── MATERIAL PRODUKSI ───────────────────────── */
+let matTab = 'laporan';
+PAGES.material = function () {
+  $('#app-container').innerHTML = `<ul class="nav nav-pills mb-3 gap-1">${[['laporan', 'Laporan'], ['pemakaian', 'Pemakaian'], ['belanja', 'Belanja'], ['master', 'Master']].map(([k, l]) => `<li class="nav-item"><a class="nav-link" data-tab="${k}" style="cursor:pointer" onclick="showMatTab('${k}')">${l}</a></li>`).join('')}</ul><div id="matBody"></div>`;
+  showMatTab(matTab);
+};
+function showMatTab(k) {
+  matTab = k;
+  document.querySelectorAll('[data-tab]').forEach(a => a.classList.toggle('active', a.dataset.tab === k));
+  ({ laporan: matLaporan, pemakaian: matPemakaian, belanja: matBelanja, master: matMaster })[k]();
+}
+const matById = id => AppState.masterMaterial.find(m => m.id === id);
+const matOpts = () => '<option value="">-- Pilih Material --</option>' + AppState.masterMaterial.filter(m => m.status === 'Aktif').map(m => `<option value="${m.id}">${esc(m.nama)} (stok ${fmtNum(m.stok)} ${esc(m.satuan)})</option>`).join('');
+async function matRefresh() { await loadMasterCaches(); showMatTab(matTab); }
+
+/* — Laporan — */
+function matLaporan() {
+  $('#matBody').innerHTML = `<div class="section-card mb-3"><div class="row g-2 align-items-end">
+    <div class="col-6 col-md-3"><label class="form-label">Dari</label><input type="date" id="mlFrom" class="form-control" value="${firstOfMonthStr()}"></div>
+    <div class="col-6 col-md-3"><label class="form-label">Sampai</label><input type="date" id="mlTo" class="form-control" value="${todayStr()}"></div>
+    <div class="col-12 col-md-auto d-flex gap-1 flex-wrap"><button class="btn btn-accent" onclick="loadMatLaporan()">Tampilkan</button>
+      <button class="btn btn-outline-accent" onclick="setMatRange('hari')">Hari ini</button><button class="btn btn-outline-accent" onclick="setMatRange('minggu')">7 hari</button><button class="btn btn-outline-accent" onclick="setMatRange('bulan')">Bulan ini</button></div>
+  </div></div><div id="mlBody"></div>`;
+  loadMatLaporan();
+}
+function setMatRange(k) {
+  const d = new Date(); d.setDate(d.getDate() - 6);
+  const [f, t] = k === 'hari' ? [todayStr(), todayStr()] : k === 'minggu' ? [dateToStr(d), todayStr()] : [firstOfMonthStr(), todayStr()];
+  $('#mlFrom').value = f; $('#mlTo').value = t; loadMatLaporan();
+}
+async function loadMatLaporan() {
+  const f = $('#mlFrom').value, t = $('#mlTo').value, box = $('#mlBody');
+  if (!f || !t || f > t) return showToast('Validasi', 'Rentang tanggal tidak valid.', 'warning');
+  box.innerHTML = spinnerBlock();
+  const [pm, bl] = await Promise.all([
+    fetchAllPages(() => sb.from('material_pemakaian').select('material_id,operator_nama,jumlah,nilai').gte('tanggal', f).lte('tanggal', t).order('tanggal').order('id')),
+    fetchAllPages(() => sb.from('material_belanja').select('material_id,jumlah,total').gte('tanggal', f).lte('tanggal', t).order('tanggal').order('id'))]);
+  if (!pm || !bl) { box.innerHTML = errBox('Gagal memuat laporan.', 'loadMatLaporan()'); return; }
+  const A = {}; AppState.masterMaterial.forEach(m => A[m.id] = { m, pakai: 0, nilai: 0, beli: 0, nilaiBeli: 0 });
+  pm.forEach(r => { const a = A[r.material_id]; if (a) { a.pakai += num(r.jumlah); a.nilai += num(r.nilai); } });
+  bl.forEach(r => { const a = A[r.material_id]; if (a) { a.beli += num(r.jumlah); a.nilaiBeli += num(r.total); } });
+  const rows = Object.values(A).filter(a => a.pakai || a.beli || num(a.m.stok)).sort((x, y) => y.nilai - x.nilai);
+  const totPakai = rows.reduce((s, a) => s + a.nilai, 0), totBeli = rows.reduce((s, a) => s + a.nilaiBeli, 0), totStok = AppState.masterMaterial.reduce((s, m) => s + num(m.nilai_stok), 0);
+  const ops = {};
+  pm.forEach(r => { const o = ops[r.operator_nama || '(tanpa operator)'] = ops[r.operator_nama || '(tanpa operator)'] || { nilai: 0, item: {} }, m = matById(r.material_id) || { nama: '?', satuan: '' }; o.nilai += num(r.nilai); const it = o.item[m.nama] = o.item[m.nama] || { q: 0, s: m.satuan }; it.q += num(r.jumlah); });
+  const kpi = (c, ic, l, v) => `<div class="col-md-4"><div class="kpi-card ${c}"><i class="bi ${ic} kpi-icon"></i><div><div class="kpi-label">${l}</div><div class="kpi-value">${fmtRupiah(v)}</div></div></div></div>`;
+  box.innerHTML = `<div class="row g-3 mb-3">${kpi('kpi-orange', 'bi-tools', 'Biaya Material Terpakai', totPakai)}${kpi('kpi-blue', 'bi-cart', 'Belanja Material (periode)', totBeli)}${kpi('kpi-teal', 'bi-boxes', 'Nilai Stok Material Saat Ini', totStok)}</div>
+    <div class="section-card mb-3"><h6>Per Material · ${tglSingkat(f)} – ${tglSingkat(t)}</h6><div class="table-responsive"><table class="table"><thead><tr><th>Material</th><th class="text-end">Dipakai</th><th class="text-end">Nilai Terpakai</th><th class="text-end">Dibeli</th><th class="text-end">Nilai Belanja</th><th class="text-end">Sisa Stok</th><th class="text-end">Nilai Stok</th></tr></thead><tbody>
+    ${rows.map(a => `<tr><td class="fw-bold">${esc(a.m.nama)}</td><td class="text-end">${fmtNum(a.pakai)} ${esc(a.m.satuan)}</td><td class="text-end">${fmtRupiah(a.nilai)}</td><td class="text-end">${fmtNum(a.beli)}</td><td class="text-end">${fmtRupiah(a.nilaiBeli)}</td><td class="text-end"><span class="badge-status ${num(a.m.stok) <= 0 ? 'badge-low' : 'badge-ok'}">${fmtNum(a.m.stok)} ${esc(a.m.satuan)}</span></td><td class="text-end">${fmtRupiah(a.m.nilai_stok)}</td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-secondary py-4">Belum ada data material.</td></tr>'}
+    </tbody></table></div></div>
+    <div class="section-card"><h6>Per Operator</h6>${Object.entries(ops).map(([n, o]) => `<div class="mini-card"><div><div class="mc-name">${esc(n)}</div><div class="small text-secondary">${Object.entries(o.item).map(([k, v]) => `${esc(k)} ${fmtNum(v.q)} ${esc(v.s)}`).join(', ')}</div></div><div class="mc-value">${fmtRupiah(o.nilai)}</div></div>`).join('') || '<p class="text-secondary small mb-0">Tidak ada pemakaian pada periode ini.</p>'}</div>`;
+}
+
+/* — Pemakaian — */
+function matPemakaian() {
+  const ops = AppState.masterOperator.filter(o => o.status === 'Aktif');
+  $('#matBody').innerHTML = `<div class="section-card mb-3"><div class="row g-2 align-items-end">
+    <div class="col-6 col-md-2"><label class="form-label">Tanggal</label><input type="date" id="mpTgl" class="form-control" value="${todayStr()}"></div>
+    <div class="col-12 col-md-4"><label class="form-label">Material</label><select id="mpMat" class="form-select">${matOpts()}</select></div>
+    <div class="col-6 col-md-3"><label class="form-label">Operator</label><select id="mpOp" class="form-select"><option value="">-- Pilih --</option>${ops.map(o => `<option value="${o.id}">${esc(o.nama)}</option>`).join('')}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label">Jumlah</label><input type="number" id="mpJml" min="0.01" step="any" class="form-control" value="1"></div>
+    <div class="col-12 col-md-9"><label class="form-label">Catatan (opsional)</label><input id="mpCat" class="form-control"></div>
+    <div class="col-12 col-md-3 text-end"><button class="btn btn-accent w-100" id="mpSimpan" onclick="submitMatPemakaian()">Simpan Pemakaian</button></div>
+  </div></div><div class="section-card"><h6>Pemakaian 30 hari terakhir</h6><div id="mpList">${spinnerBlock()}</div></div>`;
+  loadMatList('material_pemakaian', 'mpList', r => `<td>${esc((matById(r.material_id) || {}).nama || '?')}</td><td>${esc(r.operator_nama || '-')}</td><td class="text-end">${fmtNum(r.jumlah)}</td><td class="text-end">${fmtRupiah(r.nilai)}</td>`, ['Material', 'Operator', 'Qty', 'Nilai'], 'hapus_material_pemakaian');
+}
+async function submitMatPemakaian() {
+  const mid = $('#mpMat').value, op = $('#mpOp').value, jml = num($('#mpJml').value), m = matById(mid);
+  if (!m || !op || jml <= 0) return showToast('Validasi', 'Pilih material, operator, dan jumlah > 0.', 'warning');
+  if (jml > num(m.stok) && !confirm(`Stok ${m.nama} hanya ${fmtNum(m.stok)} ${m.satuan}. Tetap simpan pemakaian ini?`)) return;
+  const btn = $('#mpSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
+  const r = await callSb(sb.rpc('simpan_material_pemakaian', { p_tanggal: $('#mpTgl').value, p_material_id: mid, p_operator_id: op, p_jumlah: jml, p_catatan: $('#mpCat').value.trim() || null }), 'Pemakaian tersimpan.');
+  setBtnBusy(btn, false);
+  if (r.success) { await matRefresh(); const n = matById(mid); if (n && num(n.stok) < 0) showToast('Peringatan', `Stok ${n.nama} kini minus (${fmtNum(n.stok)}). Catat belanjanya agar stok benar.`, 'warning'); }
+}
+
+/* — Belanja — */
+function matBelanja() {
+  $('#matBody').innerHTML = `<div class="section-card mb-3"><div class="row g-2 align-items-end">
+    <div class="col-6 col-md-2"><label class="form-label">Tanggal</label><input type="date" id="mbTgl" class="form-control" value="${todayStr()}"></div>
+    <div class="col-12 col-md-4"><label class="form-label">Material</label><select id="mbMat" class="form-select">${matOpts()}</select></div>
+    <div class="col-6 col-md-2"><label class="form-label">Jumlah</label><input type="number" id="mbJml" min="0.01" step="any" class="form-control" oninput="matTotal()"></div>
+    <div class="col-6 col-md-2"><label class="form-label">Harga Satuan</label><input type="number" id="mbHrg" min="0" step="any" class="form-control" oninput="matTotal()"></div>
+    <div class="col-12 col-md-2 fw-bold pb-2" id="mbTotal">Rp 0</div>
+    <div class="col-12 col-md-9"><label class="form-label">Catatan (opsional)</label><input id="mbCat" class="form-control"></div>
+    <div class="col-12 col-md-3 text-end"><button class="btn btn-accent w-100" id="mbSimpan" onclick="submitMatBelanja()">Simpan Belanja</button></div>
+  </div></div><div class="section-card"><h6>Belanja 30 hari terakhir</h6><div id="mbList">${spinnerBlock()}</div></div>`;
+  loadMatList('material_belanja', 'mbList', r => `<td>${esc((matById(r.material_id) || {}).nama || '?')}</td><td class="text-end">${fmtNum(r.jumlah)}</td><td class="text-end">${fmtRupiah(r.harga_satuan)}</td><td class="text-end">${fmtRupiah(r.total)}</td>`, ['Material', 'Qty', 'Harga', 'Total'], 'hapus_material_belanja');
+}
+function matTotal() { $('#mbTotal').textContent = fmtRupiah(num($('#mbJml').value) * num($('#mbHrg').value)); }
+async function submitMatBelanja() {
+  const mid = $('#mbMat').value, jml = num($('#mbJml').value);
+  if (!mid || jml <= 0 || $('#mbHrg').value === '') return showToast('Validasi', 'Pilih material, isi jumlah (> 0) dan harga satuan.', 'warning');
+  const btn = $('#mbSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
+  const r = await callSb(sb.rpc('simpan_material_belanja', { p_tanggal: $('#mbTgl').value, p_material_id: mid, p_jumlah: jml, p_harga: num($('#mbHrg').value), p_catatan: $('#mbCat').value.trim() || null }), 'Belanja tersimpan, harga rata-rata diperbarui.');
+  setBtnBusy(btn, false); if (r.success) await matRefresh();
+}
+
+/* daftar 30 hari terakhir (dipakai tab Pemakaian & Belanja) */
+async function loadMatList(table, boxId, cells, heads, delRpc) {
+  const d = new Date(); d.setDate(d.getDate() - 30);
+  const r = await callSb(sb.from(table).select('*').gte('tanggal', dateToStr(d)).order('tanggal', { ascending: false }).order('created_at', { ascending: false }).limit(300), null, { silent: true });
+  const box = $('#' + boxId); if (!box) return;
+  if (!r.success) { box.innerHTML = errBox('Gagal memuat daftar.', `showMatTab('${matTab}')`); return; }
+  box.innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Tanggal</th>${heads.map((h, i) => `<th class="${i > 1 || heads.length === 4 && i > 0 && h !== 'Operator' ? 'text-end' : ''}">${h}</th>`).join('')}<th>Aksi</th></tr></thead><tbody>
+    ${r.data.map(x => `<tr><td>${tglSingkat(x.tanggal)}</td>${cells(x)}<td><button class="action-btn delete" onclick="deleteMatRow('${delRpc}','${x.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || `<tr><td colspan="${heads.length + 2}" class="text-center text-secondary py-4">Belum ada data.</td></tr>`}
+  </tbody></table></div>`;
+}
+function deleteMatRow(rpc, id) {
+  confirmDelete(async () => { const r = await callSb(sb.rpc(rpc, { p_id: id }), 'Data dihapus, stok & harga dihitung ulang.'); if (r.success) await matRefresh(); }, 'Hapus catatan ini? Stok dan harga rata-rata material akan dihitung ulang.');
+}
+
+/* — Master (material & operator) — */
+function matMaster() {
+  $('#matBody').innerHTML = `<div class="section-card mb-3"><h6><span>Master Material</span><button class="btn btn-accent btn-sm" onclick="openMaterialForm()"><i class="bi bi-plus-lg"></i> Tambah</button></h6>
+    <p class="small text-secondary">Stok awal diisi lewat tab Belanja (catat sebagai belanja). Stok & harga rata-rata dihitung otomatis.</p>
+    <div class="table-responsive"><table class="table"><thead><tr><th>Material</th><th>Satuan</th><th class="text-end">Stok</th><th class="text-end">Harga Rata-rata</th><th class="text-end">Nilai Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+    ${AppState.masterMaterial.map(m => `<tr><td class="fw-bold">${esc(m.nama)}</td><td>${esc(m.satuan)}</td><td class="text-end"><span class="badge-status ${num(m.stok) <= 0 ? 'badge-low' : 'badge-ok'}">${fmtNum(m.stok)}</span></td><td class="text-end">${fmtRupiah(m.harga_rata)}</td><td class="text-end">${fmtRupiah(m.nilai_stok)}</td><td>${badgeStatus(m.status)}</td><td><button class="action-btn edit" onclick="openMaterialForm('${m.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteMaterial('${m.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-secondary py-4">Belum ada material.</td></tr>'}
+    </tbody></table></div></div>
+    <div class="section-card"><h6><span>Operator</span><button class="btn btn-accent btn-sm" onclick="openOperatorForm()"><i class="bi bi-plus-lg"></i> Tambah</button></h6>
+    ${AppState.masterOperator.map(o => `<div class="mini-card"><span class="mc-name">${esc(o.nama)}</span><span>${badgeStatus(o.status)} <button class="mc-btn ms-2" onclick="toggleOperator('${o.id}')">${o.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}</button> <button class="action-btn delete" onclick="deleteOperator('${o.id}')"><i class="bi bi-trash"></i></button></span></div>`).join('') || '<p class="text-secondary small mb-0">Belum ada operator.</p>'}</div>`;
+}
+function openMaterialForm(id) {
+  const m = id ? matById(id) : null;
+  showForm(m ? 'Edit Material' : 'Tambah Material', `<div class="row g-3"><div class="col-md-8"><label class="form-label">Nama Material *</label><input id="fmmNama" class="form-control" placeholder="mis. WD BATU GERINDA 4X6" value="${esc(m ? m.nama : '')}"></div>
+    <div class="col-md-4"><label class="form-label">Satuan</label><input id="fmmSat" class="form-control" value="${esc(m ? m.satuan : 'pcs')}"></div>
+    <div class="col-md-4"><label class="form-label">Status</label><select id="fmmStatus" class="form-select"><option ${m && m.status === 'Nonaktif' ? '' : 'selected'}>Aktif</option><option ${m && m.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option></select></div>
+    <div class="col-12 text-end"><button class="btn btn-secondary me-2" data-bs-dismiss="modal">Batal</button><button class="btn btn-accent" id="fmmSimpan" onclick="saveMaterial('${id || ''}')">Simpan</button></div></div>`);
+}
+async function saveMaterial(id) {
+  const nama = $('#fmmNama').value.trim(); if (!nama) return showToast('Validasi', 'Nama material wajib diisi.', 'warning');
+  const payload = { nama, satuan: $('#fmmSat').value.trim() || 'pcs', status: $('#fmmStatus').value };
+  const btn = $('#fmmSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
+  const r = await callSb(id ? sb.from('master_material').update(payload).eq('id', id) : sb.from('master_material').insert(payload), 'Material disimpan.'); setBtnBusy(btn, false);
+  if (r.success) { hideForm(); await matRefresh(); }
+}
+function deleteMaterial(id) { confirmDelete(async () => { const r = await callSb(sb.from('master_material').delete().eq('id', id), 'Material dihapus.'); if (r.success) await matRefresh(); }, 'Hapus material ini? Material yang sudah punya catatan belanja/pemakaian tidak bisa dihapus (nonaktifkan saja).'); }
+function openOperatorForm() { showForm('Tambah Operator', `<div class="mb-3"><label class="form-label">Nama Operator *</label><input id="foNama" class="form-control"></div><div class="text-end"><button class="btn btn-secondary me-2" data-bs-dismiss="modal">Batal</button><button class="btn btn-accent" id="foSimpan" onclick="saveOperator()">Simpan</button></div>`); }
+async function saveOperator() {
+  const nama = $('#foNama').value.trim(); if (!nama) return showToast('Validasi', 'Nama wajib diisi.', 'warning');
+  const btn = $('#foSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
+  const r = await callSb(sb.from('master_operator').insert({ nama }), 'Operator ditambahkan.'); setBtnBusy(btn, false);
+  if (r.success) { hideForm(); await matRefresh(); }
+}
+async function toggleOperator(id) { const o = AppState.masterOperator.find(x => x.id === id); const r = await callSb(sb.from('master_operator').update({ status: o.status === 'Aktif' ? 'Nonaktif' : 'Aktif' }).eq('id', id), 'Status operator diubah.'); if (r.success) await matRefresh(); }
+function deleteOperator(id) { confirmDelete(async () => { const r = await callSb(sb.from('master_operator').delete().eq('id', id), 'Operator dihapus.'); if (r.success) await matRefresh(); }, 'Hapus operator ini? Riwayat pemakaian tetap tersimpan dengan namanya.'); }
 
 /* ───────────────────────── PENGATURAN ───────────────────────── */
 PAGES.pengaturan = function () {
