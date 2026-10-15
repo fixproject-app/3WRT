@@ -1,4 +1,12 @@
 'use strict';
+/* Pelindung: bila brand.js belum ikut terunggah / index.html masih versi lama, tampilkan pesan jelas (bukan layar loading macet) */
+if (!window.Brand) {
+  document.addEventListener('DOMContentLoaded', () => {
+    const o = document.getElementById('loadingOverlay');
+    if (o) o.innerHTML = '<div style="max-width:420px;text-align:center;padding:1.5rem"><h5>Berkas aplikasi belum lengkap</h5><p style="opacity:.8;font-size:.9rem">File <b>brand.js</b> belum terunggah atau <b>index.html</b> belum diperbarui. Unggah <b>index.html, brand.js, app.js, dan style.css</b> bersamaan, lalu muat ulang dengan Ctrl+Shift+R.</p></div>';
+  });
+  throw new Error('brand.js tidak dimuat');
+}
 /* ============================================================
    Aplikasi Toko & Produksi — app.js (Supabase)
    URL & key Supabase TIDAK diisi di sini, melainkan di file config.js
