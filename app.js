@@ -1,6 +1,6 @@
 'use strict';
 /* ============================================================
-   MARKET 3-WT — app.js (Supabase)
+   Aplikasi Toko & Produksi — app.js (Supabase)
    URL & key Supabase TIDAK diisi di sini, melainkan di file config.js
    (agar memperbarui app.js tidak menimpa konfigurasi Anda).
    ============================================================ */
@@ -137,19 +137,7 @@ async function loadConfig() {
   if (r.success) { AppState.config = {}; r.data.forEach(x => AppState.config[x.key] = x.value); }
   applyConfig();
 }
-function applyConfig() {
-  const c = AppState.config;
-  const name = c.appName || 'MARKET 3-WT';
-  document.title = name;
-  $('#appTitle').textContent = name;
-  $('#loginTitle').textContent = name;
-  const PH = 'https://placehold.co/80x80/16a34a/ffffff?text=3WT';
-  ['#appLogo', '#loginLogo'].forEach(sel => {
-    const img = $(sel);
-    img.onerror = () => { img.onerror = null; img.src = PH; };   // URL rusak → tampil placeholder, bukan ikon rusak
-    img.src = c.logoUrl || PH;
-  });
-}
+function applyConfig() { Brand.set(AppState.config); }   // identitas dikelola terpusat di brand.js
 
 /* ───────────────────────── AUTH ───────────────────────── */
 function showLogin(msg) {
@@ -230,7 +218,7 @@ function navigateTo(page, arg) {
   document.querySelectorAll('#sidebarNav .nav-link').forEach(a => a.classList.toggle('active', a.dataset.page === page));
   const m = menu.find(x => x.id === page);
   $('#pageTitle').textContent = m ? m.label : '';
-  destroyCharts(); closeSidebar(); window.scrollTo(0, 0);
+  destroyCharts(); closeSidebar(); window.scrollTo(0, 0); Brand.clearPreview();
   PAGES[page](arg);
 }
 
@@ -398,7 +386,7 @@ function renderCompare() {
     type: 'bar',
     data: { labels: shown.map(e => e.nama), datasets: [
       { label: lblLalu, data: shown.map(e => e.lalu), backgroundColor: '#94a3b8', borderRadius: 5 },
-      { label: lblIni, data: shown.map(e => e.ini), backgroundColor: '#16a34a', borderRadius: 5 } ] },
+      { label: lblIni, data: shown.map(e => e.ini), backgroundColor: Brand.accent(), borderRadius: 5 } ] },
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { color: tc } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtV(c.parsed.x)}` } } },
       scales: { x: { ticks: { color: tc, callback: v => qty ? fmtNum(v) : 'Rp ' + fmtNum(v) }, grid: { color: gc } }, y: { ticks: { color: tc }, grid: { display: false } } } }
@@ -430,7 +418,7 @@ function renderTop10Chart() {
   const tc = dark ? '#9aa0bc' : '#6b7280', gc = dark ? '#262c47' : '#e5e7eb';
   chartInstances.top10 = new Chart(cv, {
     type: 'bar',
-    data: { labels: top10Data.map(i => i.nama), datasets: [{ label: 'Qty', data: top10Data.map(i => i.qty), backgroundColor: '#16a34a', borderRadius: 6 }] },
+    data: { labels: top10Data.map(i => i.nama), datasets: [{ label: 'Qty', data: top10Data.map(i => i.qty), backgroundColor: Brand.accent(), borderRadius: 6 }] },
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { color: tc }, grid: { color: gc } }, y: { ticks: { color: tc }, grid: { display: false } } } }
   });
 }
@@ -978,7 +966,7 @@ async function submitMatPemakaian() {
 function matBelanja() {
   $('#matBody').innerHTML = `<div class="section-card mb-3"><div class="row g-2 align-items-end">
     <div class="col-6 col-md-2"><label class="form-label">Tanggal</label><input type="date" id="mbTgl" class="form-control" value="${todayStr()}"></div>
-    <div class="col-12 col-md-4"><label class="form-label">Material</label><select id="mbMat" class="form-select">${matOpts()}</select></div>
+    <div class="col-12 col-md-4"><label class="form-label">Material</label><select id="mbMat" class="form-select" onchange="onBelanjaMat()">${matOpts()}</select></div>
     <div class="col-6 col-md-2"><label class="form-label">Jumlah</label><input type="number" id="mbJml" min="0.01" step="any" class="form-control" oninput="matTotal()"></div>
     <div class="col-6 col-md-2"><label class="form-label">Harga Satuan</label><input type="number" id="mbHrg" min="0" step="any" class="form-control" oninput="matTotal()"></div>
     <div class="col-12 col-md-2 fw-bold pb-2" id="mbTotal">Rp 0</div>
@@ -986,6 +974,12 @@ function matBelanja() {
     <div class="col-12 col-md-3 text-end"><button class="btn btn-accent w-100" id="mbSimpan" onclick="submitMatBelanja()">Simpan Belanja</button></div>
   </div></div><div class="section-card"><h6>Belanja 30 hari terakhir</h6><div id="mbList">${spinnerBlock()}</div></div>`;
   loadMatList('material_belanja', 'mbList', r => `<td>${esc((matById(r.material_id) || {}).nama || '?')}</td><td class="text-end">${fmtNum(r.jumlah)}</td><td class="text-end">${fmtRupiah(r.harga_satuan)}</td><td class="text-end">${fmtRupiah(r.total)}</td>`, ['Material', 'Qty', 'Harga', 'Total'], 'hapus_material_belanja');
+}
+/* Pilih material di tab Belanja → harga default terisi otomatis (tetap bisa diubah); kosong bila belum ada harga default */
+function onBelanjaMat() {
+  const m = matById($('#mbMat').value), h = m ? num(m.harga_default) : 0;
+  $('#mbHrg').value = h > 0 ? h : '';
+  matTotal();
 }
 function matTotal() { $('#mbTotal').textContent = fmtRupiah(num($('#mbJml').value) * num($('#mbHrg').value)); }
 async function submitMatBelanja() {
@@ -1014,8 +1008,8 @@ function deleteMatRow(rpc, id) {
 function matMaster() {
   $('#matBody').innerHTML = `<div class="section-card mb-3"><h6><span>Master Material</span><button class="btn btn-accent btn-sm" onclick="openMaterialForm()"><i class="bi bi-plus-lg"></i> Tambah</button></h6>
     <p class="small text-secondary">Stok awal diisi lewat tab Belanja (catat sebagai belanja). Stok & harga rata-rata dihitung otomatis.</p>
-    <div class="table-responsive"><table class="table"><thead><tr><th>Material</th><th>Satuan</th><th class="text-end">Stok</th><th class="text-end">Harga Rata-rata</th><th class="text-end">Nilai Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
-    ${AppState.masterMaterial.map(m => `<tr><td class="fw-bold">${esc(m.nama)}</td><td>${esc(m.satuan)}</td><td class="text-end"><span class="badge-status ${num(m.stok) <= 0 ? 'badge-low' : 'badge-ok'}">${fmtNum(m.stok)}</span></td><td class="text-end">${fmtRupiah(m.harga_rata)}</td><td class="text-end">${fmtRupiah(m.nilai_stok)}</td><td>${badgeStatus(m.status)}</td><td><button class="action-btn edit" onclick="openMaterialForm('${m.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteMaterial('${m.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="7" class="text-center text-secondary py-4">Belum ada material.</td></tr>'}
+    <div class="table-responsive"><table class="table"><thead><tr><th>Material</th><th>Satuan</th><th class="text-end">Stok</th><th class="text-end">Harga Default</th><th class="text-end">Harga Rata-rata</th><th class="text-end">Nilai Stok</th><th>Status</th><th>Aksi</th></tr></thead><tbody>
+    ${AppState.masterMaterial.map(m => `<tr><td class="fw-bold">${esc(m.nama)}</td><td>${esc(m.satuan)}</td><td class="text-end"><span class="badge-status ${num(m.stok) <= 0 ? 'badge-low' : 'badge-ok'}">${fmtNum(m.stok)}</span></td><td class="text-end">${m.harga_default > 0 ? fmtRupiah(m.harga_default) : '-'}</td><td class="text-end">${fmtRupiah(m.harga_rata)}</td><td class="text-end">${fmtRupiah(m.nilai_stok)}</td><td>${badgeStatus(m.status)}</td><td><button class="action-btn edit" onclick="openMaterialForm('${m.id}')"><i class="bi bi-pencil"></i></button><button class="action-btn delete" onclick="deleteMaterial('${m.id}')"><i class="bi bi-trash"></i></button></td></tr>`).join('') || '<tr><td colspan="8" class="text-center text-secondary py-4">Belum ada material.</td></tr>'}
     </tbody></table></div></div>
     <div class="section-card"><h6><span>Operator</span><button class="btn btn-accent btn-sm" onclick="openOperatorForm()"><i class="bi bi-plus-lg"></i> Tambah</button></h6>
     ${AppState.masterOperator.map(o => `<div class="mini-card"><span class="mc-name">${esc(o.nama)}</span><span>${badgeStatus(o.status)} <button class="mc-btn ms-2" onclick="toggleOperator('${o.id}')">${o.status === 'Aktif' ? 'Nonaktifkan' : 'Aktifkan'}</button> <button class="action-btn delete" onclick="deleteOperator('${o.id}')"><i class="bi bi-trash"></i></button></span></div>`).join('') || '<p class="text-secondary small mb-0">Belum ada operator.</p>'}</div>`;
@@ -1024,12 +1018,13 @@ function openMaterialForm(id) {
   const m = id ? matById(id) : null;
   showForm(m ? 'Edit Material' : 'Tambah Material', `<div class="row g-3"><div class="col-md-8"><label class="form-label">Nama Material *</label><input id="fmmNama" class="form-control" placeholder="mis. WD BATU GERINDA 4X6" value="${esc(m ? m.nama : '')}"></div>
     <div class="col-md-4"><label class="form-label">Satuan</label><input id="fmmSat" class="form-control" value="${esc(m ? m.satuan : 'pcs')}"></div>
+    <div class="col-md-4"><label class="form-label">Harga Beli Default (Rp)</label><input id="fmmHarga" type="number" min="0" step="any" class="form-control" placeholder="0" value="${m && num(m.harga_default) > 0 ? num(m.harga_default) : ''}"></div>
     <div class="col-md-4"><label class="form-label">Status</label><select id="fmmStatus" class="form-select"><option ${m && m.status === 'Nonaktif' ? '' : 'selected'}>Aktif</option><option ${m && m.status === 'Nonaktif' ? 'selected' : ''}>Nonaktif</option></select></div>
     <div class="col-12 text-end"><button class="btn btn-secondary me-2" data-bs-dismiss="modal">Batal</button><button class="btn btn-accent" id="fmmSimpan" onclick="saveMaterial('${id || ''}')">Simpan</button></div></div>`);
 }
 async function saveMaterial(id) {
   const nama = $('#fmmNama').value.trim(); if (!nama) return showToast('Validasi', 'Nama material wajib diisi.', 'warning');
-  const payload = { nama, satuan: $('#fmmSat').value.trim() || 'pcs', status: $('#fmmStatus').value };
+  const payload = { nama, satuan: $('#fmmSat').value.trim() || 'pcs', harga_default: Math.max(0, num($('#fmmHarga').value)), status: $('#fmmStatus').value };
   const btn = $('#fmmSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
   const r = await callSb(id ? sb.from('master_material').update(payload).eq('id', id) : sb.from('master_material').insert(payload), 'Material disimpan.'); setBtnBusy(btn, false);
   if (r.success) { hideForm(); await matRefresh(); }
@@ -1049,34 +1044,50 @@ function deleteOperator(id) { confirmDelete(async () => { const r = await callSb
 PAGES.pengaturan = function () {
   const c = AppState.config;
   $('#app-container').innerHTML = `
-    <div class="section-card mb-3"><h6>Identitas Aplikasi & Invoice</h6><div class="row g-3">
-      <div class="col-md-6"><label class="form-label">Nama Aplikasi</label><input id="cfgApp" class="form-control" value="${esc(c.appName || '')}"></div>
-      <div class="col-md-6"><label class="form-label">URL Logo (dipakai juga di invoice)</label><input id="cfgLogo" class="form-control" placeholder="https://..." value="${esc(c.logoUrl || '')}"></div>
-      <div class="col-12"><div class="p-3 rounded-3" style="background:var(--bg-primary);border:1px dashed var(--border-color)">
-        <div class="d-flex flex-wrap gap-2 align-items-center">
-          <input type="file" id="cfgLogoFile" accept="image/png,image/jpeg,image/webp" class="form-control form-control-sm" style="max-width:280px">
-          <button class="btn btn-outline-accent btn-sm" id="cfgUpload" onclick="uploadLogo()"><i class="bi bi-upload"></i> Upload Logo</button>
-          <button class="btn btn-secondary btn-sm" onclick="testLogo()"><i class="bi bi-search"></i> Tes Logo</button>
-        </div>
-        <div class="small text-secondary mt-2">PNG / JPG / WebP, maks. 2 MB. Upload langsung adalah cara paling andal agar logo tampil di aplikasi <b>dan</b> invoice PDF. Tombol Tes Logo memeriksa URL yang tertulis di kolom atas.</div>
-        <div id="logoTest" class="mt-2 small"></div>
+    <div class="section-card mb-3"><h6><span><i class="bi bi-palette"></i> Identitas & Tampilan</span><button class="btn btn-outline-accent btn-sm" onclick="resetBrand()">Kembalikan ke Bawaan</button></h6>
+      <p class="small text-secondary">Perubahan langsung tampil sebagai pratinjau. Klik <b>Simpan Identitas</b> untuk menyimpannya. Kolom kosong memakai nilai bawaan salinan ini.</p>
+      <div class="row g-3">
+        <div class="col-md-6"><label class="form-label">Nama Aplikasi</label><input id="cfgApp" class="form-control" oninput="previewBrand()" value="${esc(c.appName || '')}" placeholder="${esc(Brand.get('appName'))}"></div>
+        <div class="col-md-6"><label class="form-label">Tagline (teks kecil di bawah nama)</label><input id="cfgTagline" class="form-control" oninput="previewBrand()" value="${esc(c.tagline || '')}" placeholder="${esc(Brand.get('tagline'))}"></div>
+        <div class="col-md-6"><label class="form-label">Nama Bisnis / Perusahaan (header invoice)</label><input id="cfgPerusahaan" class="form-control" oninput="previewBrand()" value="${esc(c.perusahaan || '')}" placeholder="${esc(Brand.get('perusahaan') || Brand.get('appName'))}"></div>
+        <div class="col-md-6"><label class="form-label">Telepon</label><input id="cfgTelepon" class="form-control" oninput="previewBrand()" value="${esc(c.telepon || '')}"></div>
+        <div class="col-12"><label class="form-label">Alamat</label><input id="cfgAlamat" class="form-control" oninput="previewBrand()" value="${esc(c.alamat || '')}"></div>
+        <div class="col-md-4"><label class="form-label">Warna Utama</label><input type="color" id="cfgPrimary" class="form-control form-control-color w-100" value="${Brand.hex(Brand.rgb('primaryColor'))}" oninput="previewBrand()"></div>
+        <div class="col-md-4"><label class="form-label">Warna Sekunder</label><input type="color" id="cfgSecondary" class="form-control form-control-color w-100" value="${Brand.hex(Brand.rgb('secondaryColor'))}" oninput="previewBrand()"></div>
+        <div class="col-md-4"><label class="form-label">Warna Sidebar & Header Tabel</label><input type="color" id="cfgSidebar" class="form-control form-control-color w-100" value="${Brand.hex(Brand.rgb('sidebarColor'))}" oninput="previewBrand()"></div>
+        <div class="col-md-6"><label class="form-label">Logo (URL, dipakai juga di invoice)</label><input id="cfgLogo" class="form-control" placeholder="https://..." oninput="previewBrand()" value="${esc(c.logoUrl || '')}">
+          <div class="d-flex gap-2 mt-2 flex-wrap"><input type="file" id="cfgLogoFile" accept="image/png,image/jpeg,image/webp" class="form-control form-control-sm" style="max-width:230px"><button class="btn btn-outline-accent btn-sm" id="cfgUploadLogo" onclick="uploadBrandImage('logo')"><i class="bi bi-upload"></i> Upload Logo</button><button class="btn btn-secondary btn-sm" onclick="testLogo()">Tes Logo</button></div></div>
+        <div class="col-md-6"><label class="form-label">Favicon (ikon tab browser, URL)</label><input id="cfgFavicon" class="form-control" placeholder="https://... (kosong = pakai logo)" oninput="previewBrand()" value="${esc(c.faviconUrl || '')}">
+          <div class="d-flex gap-2 mt-2 flex-wrap"><input type="file" id="cfgFaviconFile" accept="image/png,image/jpeg,image/webp" class="form-control form-control-sm" style="max-width:230px"><button class="btn btn-outline-accent btn-sm" id="cfgUploadFavicon" onclick="uploadBrandImage('favicon')"><i class="bi bi-upload"></i> Upload Favicon</button></div>
+          <div class="small text-secondary mt-1">PNG/JPG/WebP maks. 2 MB. Favicon dikecilkan otomatis ke 192 px.</div></div>
+        <div class="col-12"><div id="logoTest" class="small"></div></div>
+        <div class="col-12 text-end"><button class="btn btn-accent" id="cfgSimpan" onclick="saveConfig()">Simpan Identitas</button></div>
       </div></div>
-      <div class="col-md-6"><label class="form-label">Nama Perusahaan (header invoice)</label><input id="cfgPerusahaan" class="form-control" value="${esc(c.perusahaan || '')}"></div>
-      <div class="col-md-6"><label class="form-label">Telepon</label><input id="cfgTelepon" class="form-control" value="${esc(c.telepon || '')}"></div>
-      <div class="col-12"><label class="form-label">Alamat</label><input id="cfgAlamat" class="form-control" value="${esc(c.alamat || '')}"></div>
-      <div class="col-12 text-end"><button class="btn btn-accent" id="cfgSimpan" onclick="saveConfig()">Simpan Pengaturan</button></div>
-    </div></div>
     <div class="section-card mb-3"><h6>Pengguna & Role</h6>
       <p class="small text-secondary">Admin = akses penuh. Owner = hanya Dashboard. Akun baru dibuat lewat Supabase → Authentication → Users → Add user (otomatis berperan Owner).</p>
       <div id="userList">${spinnerBlock()}</div></div>
     <div class="section-card"><h6>Sumber Barang Masuk <button class="btn btn-accent btn-sm" onclick="openSumberForm()"><i class="bi bi-plus-lg"></i> Tambah</button></h6><div id="sumberList"></div></div>`;
   renderSumberList(); loadUsers();
 };
+function brandFormValues() {
+  const g = id => $('#' + id).value.trim();
+  return { appName: g('cfgApp'), tagline: g('cfgTagline'), perusahaan: g('cfgPerusahaan'), alamat: g('cfgAlamat'), telepon: g('cfgTelepon'), logoUrl: g('cfgLogo'), faviconUrl: g('cfgFavicon'), primaryColor: g('cfgPrimary'), secondaryColor: g('cfgSecondary'), sidebarColor: g('cfgSidebar') };
+}
+function previewBrand() { Brand.preview(brandFormValues()); }
 async function saveConfig() {
-  const rows = [['appName', 'cfgApp'], ['logoUrl', 'cfgLogo'], ['perusahaan', 'cfgPerusahaan'], ['telepon', 'cfgTelepon'], ['alamat', 'cfgAlamat']].map(([key, id]) => ({ key, value: $('#' + id).value.trim() }));
+  const v = brandFormValues();
+  for (const k of ['primaryColor', 'secondaryColor', 'sidebarColor']) { const err = Brand.check(k, v[k]); if (err) return showToast('Validasi', err, 'warning'); }
+  // nilai yang sama dengan bawaan salinan disimpan kosong, agar perubahan bawaan di config.js tetap berlaku
+  const rows = Object.entries(v).map(([key, value]) => ({ key, value: value.toLowerCase() === String(Brand.defaultOf(key)).toLowerCase() ? '' : value }));
   const btn = $('#cfgSimpan'); setBtnBusy(btn, true, 'Menyimpan...');
-  const r = await callSb(sb.from('app_config').upsert(rows, { onConflict: 'key' }), 'Pengaturan disimpan.'); setBtnBusy(btn, false);
-  if (r.success) { rows.forEach(x => AppState.config[x.key] = x.value); applyConfig(); testLogo(); }
+  const r = await callSb(sb.from('app_config').upsert(rows, { onConflict: 'key' }), 'Identitas disimpan.'); setBtnBusy(btn, false);
+  if (r.success) { rows.forEach(x => AppState.config[x.key] = x.value); Brand.clearPreview(); applyConfig(); testLogo(); }
+}
+async function resetBrand() {
+  if (!confirm('Kembalikan identitas ke nilai bawaan salinan ini? Nama, logo, favicon, dan warna yang pernah Anda simpan akan dikosongkan.')) return;
+  const rows = Brand.KEYS.filter(k => k !== 'poweredBy').map(key => ({ key, value: '' }));
+  const r = await callSb(sb.from('app_config').upsert(rows, { onConflict: 'key' }), 'Identitas dikembalikan ke bawaan.');
+  if (r.success) { rows.forEach(x => AppState.config[x.key] = ''); Brand.clearPreview(); applyConfig(); PAGES.pengaturan(); }
 }
 /* Tes URL logo: apakah tampil di aplikasi, dan apakah bisa dipakai di PDF (butuh izin CORS dari server gambar) */
 async function testLogo() {
@@ -1091,21 +1102,28 @@ async function testLogo() {
     (display ? (pdf ? ok('Bisa dipakai di invoice PDF.') : bad('Tidak bisa dipakai di invoice PDF: server gambar memblokir akses lintas-situs. Gunakan Upload Logo.')) : '');
 }
 
-/* Upload logo ke Supabase Storage (bucket publik "app-assets") lalu simpan URL-nya di pengaturan */
-async function uploadLogo() {
-  const f = $('#cfgLogoFile').files[0];
-  if (!f) return showToast('Validasi', 'Pilih file logo terlebih dahulu.', 'warning');
+/* Upload logo / favicon ke Supabase Storage (bucket publik "app-assets"); favicon dikecilkan ke PNG 192 px */
+function resizeToPng(file, size) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => { const c = document.createElement('canvas'); c.width = c.height = size; const r = Math.min(size / img.width, size / img.height), w = img.width * r, h = img.height * r; c.getContext('2d').drawImage(img, (size - w) / 2, (size - h) / 2, w, h); c.toBlob(b => b ? res(b) : rej(new Error('gagal')), 'image/png'); };
+    img.onerror = rej; img.src = URL.createObjectURL(file);
+  });
+}
+async function uploadBrandImage(kind) {
+  const fav = kind === 'favicon', f = $(fav ? '#cfgFaviconFile' : '#cfgLogoFile').files[0];
+  if (!f) return showToast('Validasi', 'Pilih file gambar terlebih dahulu.', 'warning');
   if (!/^image\/(png|jpeg|webp)$/.test(f.type)) return showToast('Validasi', 'Format harus PNG, JPG, atau WebP.', 'warning');
   if (f.size > 2 * 1024 * 1024) return showToast('Validasi', 'Ukuran file maksimal 2 MB.', 'warning');
-  const ext = f.type === 'image/png' ? 'png' : f.type === 'image/webp' ? 'webp' : 'jpg';
-  const path = `logo/logo-${Date.now()}.${ext}`;
-  const btn = $('#cfgUpload'); setBtnBusy(btn, true, 'Mengunggah...');
-  const up = await callSb(sb.storage.from('app-assets').upload(path, f, { contentType: f.type, cacheControl: '3600', upsert: false }));
+  let body = f, type = f.type, ext = f.type === 'image/png' ? 'png' : f.type === 'image/webp' ? 'webp' : 'jpg';
+  if (fav) { try { body = await resizeToPng(f, 192); type = 'image/png'; ext = 'png'; } catch (e) { return showToast('Validasi', 'Gambar favicon tidak bisa diproses.', 'warning'); } }
+  const path = `${kind}/${kind}-${Date.now()}.${ext}`, btn = $(fav ? '#cfgUploadFavicon' : '#cfgUploadLogo'); setBtnBusy(btn, true, 'Mengunggah...');
+  const up = await callSb(sb.storage.from('app-assets').upload(path, body, { contentType: type, cacheControl: '3600', upsert: false }));
   if (!up.success) { setBtnBusy(btn, false); return; }
-  const url = sb.storage.from('app-assets').getPublicUrl(path).data.publicUrl;
-  const sv = await callSb(sb.from('app_config').upsert({ key: 'logoUrl', value: url }, { onConflict: 'key' }), 'Logo diunggah dan disimpan.');
+  const url = sb.storage.from('app-assets').getPublicUrl(path).data.publicUrl, key = fav ? 'faviconUrl' : 'logoUrl';
+  const sv = await callSb(sb.from('app_config').upsert({ key, value: url }, { onConflict: 'key' }), (fav ? 'Favicon' : 'Logo') + ' diunggah dan disimpan.');
   setBtnBusy(btn, false);
-  if (sv.success) { AppState.config.logoUrl = url; $('#cfgLogo').value = url; applyConfig(); $('#cfgLogoFile').value = ''; testLogo(); }
+  if (sv.success) { AppState.config[key] = url; $(fav ? '#cfgFavicon' : '#cfgLogo').value = url; $(fav ? '#cfgFaviconFile' : '#cfgLogoFile').value = ''; applyConfig(); if (!fav) testLogo(); }
 }
 
 async function loadUsers() {
@@ -1288,18 +1306,19 @@ async function buildInvoiceDoc(o) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   const W = 210, H = 297, ML = 14, MR = 14, MB = 18, CW = W - ML - MR;
-  const C = { ink: [17, 24, 39], muted: [107, 114, 128], line: [226, 232, 240], accent: [22, 163, 74], soft: [236, 253, 245], band: [243, 245, 249], navy: [21, 26, 53], zebra: [248, 250, 252], mint: [110, 231, 183] };
-  const cfg = o.cfg || {};
+  const pc = Brand.rgb('primaryColor'), dflt = Brand.get('primaryColor').toLowerCase() === Brand.BUILTIN.primaryColor;
+  const C = { ink: [17, 24, 39], muted: [107, 114, 128], line: [226, 232, 240], accent: pc, soft: dflt ? [236, 253, 245] : Brand.shade(pc, 0.9).map(Math.round), band: [243, 245, 249], navy: Brand.rgb('sidebarColor'), zebra: [248, 250, 252], mint: dflt ? [110, 231, 183] : Brand.shade(pc, 0.55).map(Math.round) };
+  const cfg = { logoUrl: Brand.get('logoUrl'), perusahaan: Brand.get('perusahaan') || Brand.get('appName'), alamat: Brand.get('alamat'), telepon: Brand.get('telepon') };
 
   // ── Header kiri: logo + identitas ──
   const logo = await loadImageDataUrl(cfg.logoUrl);
   if (cfg.logoUrl && !logo) showToast('Logo invoice', 'Logo tidak bisa dimuat ke PDF (server gambar memblokir akses). Pakai Upload Logo di Pengaturan.', 'warning');
   let drawn = false;
   if (logo) { try { const s = 22, r = Math.min(s / logo.w, s / logo.h); const w = logo.w * r, h = logo.h * r; doc.addImage(logo.data, 'PNG', ML + (s - w) / 2, 12 + (s - h) / 2, w, h); drawn = true; } catch (e) { } }
-  if (!drawn) { doc.setFillColor(...C.accent); doc.roundedRect(ML, 12, 22, 22, 4, 4, 'F'); doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(255, 255, 255).text('3WT', ML + 11, 25.5, { align: 'center' }); }
+  if (!drawn) { doc.setFillColor(...C.accent); doc.roundedRect(ML, 12, 22, 22, 4, 4, 'F'); doc.setFont('helvetica', 'bold').setFontSize(13).setTextColor(255, 255, 255).text(Brand.initials(), ML + 11, 25.5, { align: 'center' }); }
   const tx = ML + 27;
   doc.setFont('helvetica', 'bold').setFontSize(13.5).setTextColor(...C.ink).text(o.judul, tx, 18);
-  doc.setFontSize(9.5).text(cfg.perusahaan || '3 WARNA TEKNIK', tx, 24);
+  doc.setFontSize(9.5).text(cfg.perusahaan, tx, 24);
   doc.setFont('helvetica', 'normal').setFontSize(8.5).setTextColor(...C.muted);
   doc.text(cfg.alamat || '-', tx, 29); doc.text(cfg.telepon || '-', tx, 33.5);
 
