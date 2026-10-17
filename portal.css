@@ -1,0 +1,58 @@
+/* Portal Stok Pelanggan — memakai variabel warna dari style.css/brand.js (ikut identitas & mode gelap) */
+body { background: var(--bg-primary); }
+.pt-app { max-width: 430px; margin: 0 auto; min-height: 100vh; background: var(--bg-primary); position: relative; padding-bottom: 92px; box-shadow: 0 0 40px rgba(0,0,0,.12); }
+.pt-boot { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; color: var(--text-secondary); gap: .8rem; }
+.pt-spin { width: 34px; height: 34px; border: 3px solid var(--border-color); border-top-color: var(--accent); border-radius: 50%; animation: ptspin .7s linear infinite; }
+@keyframes ptspin { to { transform: rotate(360deg); } }
+.pt-hd { background: linear-gradient(160deg, var(--sidebar-bg), var(--sidebar-bg-2)); color: #fff; padding: 18px 16px 24px; border-radius: 0 0 24px 24px; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.pt-hl { display: flex; gap: 12px; align-items: center; min-width: 0; }
+.pt-hd small { opacity: .75; font-size: 11px; display: block; }
+.pt-hd h1 { margin: 2px 0; font-size: 18px; font-weight: 700; line-height: 1.2; }
+.pt-logo { width: 48px; height: 48px; border-radius: 12px; background: #fff; object-fit: contain; flex: none; padding: 2px; }
+.pt-hb { display: flex; gap: 6px; }
+.pt-ic { background: rgba(255,255,255,.14); border: 0; color: #fff; width: 36px; height: 36px; border-radius: 10px; font-size: 16px; cursor: pointer; }
+.pt-pad { padding: 16px 16px 0; } .pt-pad0 { padding: 0 16px; }
+.pt-app h2 { font-size: 17px; margin: 4px 0 12px; }
+.pt-chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: -16px 16px 12px; }
+.pt-chip { background: var(--bg-card); border-radius: 14px; padding: 10px 6px; text-align: center; box-shadow: var(--shadow); }
+.pt-chip b { display: block; font-size: 17px; } .pt-chip small { color: var(--text-secondary); font-size: 10.5px; } .pt-chip.w b { color: var(--accent-2); }
+.pt-in { width: 100%; padding: 11px 13px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-card); color: var(--text-primary); font: inherit; outline: 0; }
+.pt-in:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+.pt-app label { display: block; font-size: 12px; font-weight: 600; margin: 12px 0 5px; }
+.pt-item { display: flex; gap: 12px; background: var(--bg-card); border-radius: 16px; padding: 12px; margin: 10px 16px; box-shadow: var(--shadow); }
+.pt-ph { width: 54px; height: 54px; border-radius: 14px; color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; flex: none; font-size: 15px; object-fit: cover; }
+.pt-im { flex: 1; min-width: 0; } .pt-code { background: var(--accent); color: #fff; border-radius: 6px; padding: 1px 7px; font-size: 10.5px; font-weight: 700; }
+.pt-nm { font-weight: 600; font-size: 13px; margin: 4px 0 8px; line-height: 1.3; }
+.pt-nums { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 6px; text-align: center; }
+.pt-nums div { background: var(--bg-primary); border-radius: 10px; padding: 6px 2px; } .pt-nums small { display: block; color: var(--text-secondary); font-size: 10px; } .pt-nums b { font-size: 14px; }
+.pt-nums .s b { font-size: 18px; font-weight: 800; } .s.ok b { color: var(--accent); } .s.low b { color: var(--accent-2); } .s.min b { color: var(--danger); }
+.pt-note { font-size: 11px; font-weight: 600; margin-top: 6px; } .pt-note.r { color: var(--danger); } .pt-note.o { color: var(--accent-2); } .pt-note.m { color: var(--text-secondary); font-weight: 500; }
+.pt-sr { display: flex; gap: 10px; align-items: center; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 12px; padding: 9px; margin-top: 6px; cursor: pointer; }
+.pt-sr .pt-ph { width: 38px; height: 38px; font-size: 12px; border-radius: 10px; } .pt-sr small { color: var(--text-secondary); }
+.pt-sel { margin-top: 10px; border: 1px solid var(--accent); background: var(--accent-light); border-radius: 12px; padding: 10px 13px; }
+.pt-step { display: flex; gap: 8px; align-items: center; } .pt-step button { width: 46px; height: 46px; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-primary); font-size: 20px; cursor: pointer; flex: none; }
+.pt-step .pt-in { text-align: center; font-size: 20px; font-weight: 700; height: 46px; }
+.pt-warn { background: #fef3c7; color: #92400e; border-radius: 12px; padding: 10px 12px; font-size: 12px; font-weight: 500; margin-top: 10px; }
+.pt-err { background: rgba(225,29,72,.1); color: var(--danger); border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 500; margin: 0 0 12px; text-align: left; }
+.pt-btn { width: 100%; margin-top: 18px; background: var(--accent); color: #fff; border: 0; border-radius: 14px; padding: 14px; font: inherit; font-weight: 700; font-size: 15px; cursor: pointer; }
+.pt-btn:disabled { opacity: .6; } .pt-btn.alt { background: var(--sidebar-bg); } .pt-btn.red { background: var(--danger); margin-top: 10px; }
+.pt-seg { display: grid; grid-template-columns: 1fr 1fr; background: var(--bg-card); border-radius: 14px; padding: 4px; margin-bottom: 12px; }
+.pt-seg button { border: 0; background: transparent; color: var(--text-secondary); padding: 9px; border-radius: 11px; font: inherit; font-weight: 600; cursor: pointer; } .pt-seg .on { background: var(--accent); color: #fff; }
+.pt-dt { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin: 14px 2px 6px; }
+.pt-row { background: var(--bg-card); border-radius: 14px; padding: 11px 13px; margin-bottom: 7px; display: flex; justify-content: space-between; gap: 10px; align-items: center; box-shadow: var(--shadow); }
+.pt-row small { color: var(--text-secondary); display: block; font-size: 11px; } .pt-row .q { font-weight: 800; font-size: 16px; white-space: nowrap; } .q.in { color: var(--accent); } .q.out { color: var(--accent-2); }
+.pt-del { border: 0; background: rgba(225,29,72,.12); color: var(--danger); border-radius: 9px; padding: 6px 9px; font: inherit; font-size: 11px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+.pt-lock { font-size: 10.5px; color: var(--text-secondary); display: block; margin-top: 3px; }
+.pt-card { background: var(--bg-card); border-radius: 16px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 12px; }
+.pt-card p { margin: 0 0 10px; display: flex; justify-content: space-between; gap: 10px; } .pt-card p span { color: var(--text-secondary); }
+.pt-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 430px; background: var(--bg-card); border-top: 1px solid var(--border-color); display: grid; grid-template-columns: repeat(4, 1fr); padding: 8px 6px calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 5; }
+.pt-nav button { border: 0; background: transparent; color: var(--text-secondary); font: inherit; font-size: 10.5px; font-weight: 600; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; cursor: pointer; }
+.pt-nav button span { font-size: 19px; } .pt-nav .on { color: var(--accent); background: var(--accent-light); }
+.pt-login { padding: 52px 24px; text-align: center; } .pt-login label { text-align: left; }
+.pt-logo-lg { width: 80px; height: 80px; margin: 0 auto 14px; border-radius: 20px; background: #fff; object-fit: contain; padding: 4px; box-shadow: 0 8px 20px var(--accent-light); display: block; }
+.pt-login h1 { margin: 0 0 4px; font-size: 21px; } .pt-login p { color: var(--text-secondary); margin: 0 0 22px; }
+.pt-small { margin-top: 18px !important; font-size: 12px; }
+.pt-copy { text-align: center; color: var(--text-secondary); font-size: 11px; margin: 22px 0 4px; }
+.pt-toast { position: fixed; left: 50%; bottom: 100px; transform: translate(-50%, 20px); background: var(--sidebar-bg); color: #fff; padding: 11px 16px; border-radius: 14px; font-size: 13px; font-weight: 500; opacity: 0; pointer-events: none; transition: .25s; z-index: 9; max-width: 90%; text-align: center; }
+.pt-toast.on { opacity: 1; transform: translate(-50%, 0); }
+.pt-empty { text-align: center; color: var(--text-secondary); padding: 26px 10px; font-size: 13px; }

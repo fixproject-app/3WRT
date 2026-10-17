@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Portal Stok Pelanggan</title>
+  <script>try{var t=localStorage.getItem('m3wt-theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+  <link href="portal.css" rel="stylesheet">
+  <!-- Identitas terpusat (sama dengan aplikasi admin): config.js lalu brand.js -->
+  <script src="config.js"></script>
+  <script src="brand.js"></script>
+</head>
+<body>
+  <div id="pt-app" class="pt-app"><div class="pt-boot"><div class="pt-spin"></div><p>Memuat...</p></div></div>
+  <div id="pt-toast" class="pt-toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="portal.js"></script>
+</body>
+</html>
