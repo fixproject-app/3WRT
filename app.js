@@ -13,8 +13,8 @@ if (!window.Brand) {
    (agar memperbarui app.js tidak menimpa konfigurasi Anda).
    ============================================================ */
 const CFG = window.APP_CONFIG || {};
-const SUPABASE_URL = String(CFG.SUPABASE_URL || 'https://fcozeothaqyyjfqehbde.supabase.co').trim();
-const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || 'sb_publishable_fthC_Hu8dZIw7ezBUS52aw_LxuTG8Vp').trim();
+const SUPABASE_URL = String(CFG.SUPABASE_URL || '').trim();
+const SUPABASE_ANON_KEY = String(CFG.SUPABASE_ANON_KEY || '').trim();
 const CONFIG_OK = /^https:\/\/\S+$/.test(SUPABASE_URL) && !/XXXX/.test(SUPABASE_URL) &&
                   SUPABASE_ANON_KEY.length > 40 && !/\s/.test(SUPABASE_ANON_KEY) && !/ISI_ANON/.test(SUPABASE_ANON_KEY);
 const sb = CONFIG_OK ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
@@ -179,6 +179,8 @@ async function bootApp(user) {
   const p = await callSb(sb.from('profiles').select('*').eq('id', user.id).maybeSingle(), null, { silent: true });
   if (!p.success || !p.data) { bootedUserId = null; await sb.auth.signOut(); return showLogin('Profil pengguna tidak ditemukan. Hubungi admin.'); }
   AppState.user = user; AppState.profile = p.data; AppState.role = p.data.role;
+  // Akun pelanggan hanya untuk portal pelanggan: arahkan ke portal.html (sesi login dibawa)
+  if (AppState.role === 'pelanggan') { location.replace('portal.html'); return; }
   await loadConfig();
   await loadMasterCaches();
   $('#userEmailLabel').textContent = user.email;
@@ -1139,7 +1141,7 @@ async function loadUsers() {
   const box = $('#userList'); if (!box) return;
   if (!r.success) { box.innerHTML = errBox('Gagal memuat pengguna.', 'loadUsers()'); return; }
   box.innerHTML = `<div class="table-responsive"><table class="table"><thead><tr><th>Email</th><th>Nama</th><th>Role</th></tr></thead><tbody>
-    ${r.data.map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.nama || '-')}</td><td><select class="form-select form-select-sm" style="max-width:140px" ${u.id === AppState.user.id ? 'disabled title="Tidak bisa mengubah role sendiri"' : ''} onchange="changeRole('${u.id}', this.value)"><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option><option value="owner" ${u.role === 'owner' ? 'selected' : ''}>owner</option></select></td></tr>`).join('')}</tbody></table></div>`;
+    ${r.data.map(u => `<tr><td>${esc(u.email)}</td><td>${esc(u.nama || '-')}</td><td>${u.role === 'pelanggan' ? `<span class="badge-status badge-ok">pelanggan${(AppState.masterPelanggan.find(p => p.id === u.pelanggan_id) || {}).nama ? ' · ' + esc(AppState.masterPelanggan.find(p => p.id === u.pelanggan_id).nama) : ''}</span>` : `<select class="form-select form-select-sm" style="max-width:140px" ${u.id === AppState.user.id ? 'disabled title="Tidak bisa mengubah role sendiri"' : ''} onchange="changeRole('${u.id}', this.value)"><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option><option value="owner" ${u.role === 'owner' ? 'selected' : ''}>owner</option></select>`}</td></tr>`).join('')}</tbody></table></div>`;
 }
 async function changeRole(id, role) { const r = await callSb(sb.from('profiles').update({ role }).eq('id', id), 'Role diperbarui.'); if (!r.success) loadUsers(); }
 function renderSumberList() {
