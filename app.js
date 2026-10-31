@@ -1353,11 +1353,9 @@ async function buildInvoiceDoc(o) {
   const ensure = need => { if (y + need > bottom) { doc.addPage(); y = 16; } };
   for (const g of o.groups) {
     ensure(34);
-    const sub = g.items.reduce((s, i) => s + i.subtotal, 0);
     doc.setFillColor(...C.soft); doc.roundedRect(ML, y, CW, 8, 1.5, 1.5, 'F');
     doc.setFillColor(...C.accent); doc.roundedRect(ML, y, 1.6, 8, 0.8, 0.8, 'F');
     doc.setFont('helvetica', 'bold').setFontSize(10).setTextColor(...C.ink).text(tglPanjang(g.tanggal), ML + 5, y + 5.4);
-    doc.setFontSize(8.3).setTextColor(...C.accent).text('Subtotal  ' + fmtNum(sub), W - MR - 3, y + 5.4, { align: 'right' });
     y += 10;
     doc.autoTable({
       startY: y, margin: { left: ML, right: MR, top: 16, bottom: MB }, theme: 'plain',
