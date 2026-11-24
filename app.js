@@ -317,9 +317,10 @@ async function loadDashboard() {
   loadCompareChart();
 }
 
-/* ── Perbandingan barang keluar per item: bulan lalu vs bulan ini ── */
+/* ── Perbandingan barang keluar per item: 2 bulan sebelumnya + bulan ini ── */
 let compareData = null;
-let compareOpt = { metrik: 'qty', mode: 'penuh', top: 10, pelanggan: '', kategori: '' };
+let compareOpt = { rentang: 'b', metrik: 'qty', mode: 'penuh', top: 10, pelanggan: '', kategori: '' };
+const RENTANG = { b: [2, 1, 0], a: [2, 0], c: [1, 0] };   // "n bulan yang lalu" yang ditampilkan (0 = bulan ini)
 const katKey = b => (String((b && b.kategori) || '').trim().toUpperCase()) || '(TANPA KATEGORI)';
 function kategoriList() {
   const m = new Map();
@@ -328,75 +329,79 @@ function kategoriList() {
 }
 const optSel = (v, cur) => String(v) === String(cur) ? 'selected' : '';
 function compareCardHtml() {
-  return `<div class="section-card mb-3"><h6><span><i class="bi bi-bar-chart-steps text-success"></i> Perbandingan Barang Keluar per Item: Bulan Lalu vs Bulan Ini</span></h6>
+  return `<div class="section-card mb-3"><h6><span><i class="bi bi-bar-chart-steps text-success"></i> Perbandingan Barang Keluar per Item</span></h6>
     <div class="row g-2 mb-3">
-      <div class="col-6 col-md-4 col-lg"><label class="form-label small mb-1">Ukuran</label><select id="cmpMetrik" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="qty" ${optSel('qty', compareOpt.metrik)}>Qty (unit)</option><option value="nilai" ${optSel('nilai', compareOpt.metrik)}>Omset (Rp)</option></select></div>
-      <div class="col-6 col-md-4 col-lg"><label class="form-label small mb-1">Pembanding</label><select id="cmpMode" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="penuh" ${optSel('penuh', compareOpt.mode)}>Bulan lalu penuh</option><option value="sama" ${optSel('sama', compareOpt.mode)}>Bulan lalu s/d tgl sama</option></select></div>
+      <div class="col-12 col-md-6 col-lg"><label class="form-label small mb-1">Rentang Bulan</label><select id="cmpRentang" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="b" ${optSel('b', compareOpt.rentang)}>2 bulan sebelumnya + bulan ini</option><option value="a" ${optSel('a', compareOpt.rentang)}>2 bulan lalu vs bulan ini</option><option value="c" ${optSel('c', compareOpt.rentang)}>Bulan lalu vs bulan ini</option></select></div>
+      <div class="col-6 col-md-3 col-lg"><label class="form-label small mb-1">Ukuran</label><select id="cmpMetrik" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="qty" ${optSel('qty', compareOpt.metrik)}>Qty (unit)</option><option value="nilai" ${optSel('nilai', compareOpt.metrik)}>Omset (Rp)</option></select></div>
+      <div class="col-6 col-md-3 col-lg"><label class="form-label small mb-1">Pembanding</label><select id="cmpMode" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="penuh" ${optSel('penuh', compareOpt.mode)}>Bulan penuh</option><option value="sama" ${optSel('sama', compareOpt.mode)}>Sampai tanggal yang sama</option></select></div>
       <div class="col-6 col-md-4 col-lg"><label class="form-label small mb-1">Pelanggan</label><select id="cmpPel" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="">Semua pelanggan</option>${AppState.masterPelanggan.map(p => `<option value="${p.id}" ${optSel(p.id, compareOpt.pelanggan)}>${esc(p.nama)}</option>`).join('')}</select></div>
       <div class="col-6 col-md-4 col-lg"><label class="form-label small mb-1">Jenis Barang</label><select id="cmpKat" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="">Semua jenis</option>${kategoriList().map(([k, l]) => `<option value="${esc(k)}" ${optSel(k, compareOpt.kategori)}>${esc(l)}</option>`).join('')}</select></div>
-      <div class="col-6 col-md-4 col-lg"><label class="form-label small mb-1">Tampilkan</label><select id="cmpTop" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="10" ${optSel(10, compareOpt.top)}>Top 10 item</option><option value="20" ${optSel(20, compareOpt.top)}>Top 20 item</option><option value="999" ${optSel(999, compareOpt.top)}>Semua item</option></select></div>
+      <div class="col-12 col-md-4 col-lg"><label class="form-label small mb-1">Tampilkan</label><select id="cmpTop" class="form-select form-select-sm" onchange="onCompareOpt()"><option value="10" ${optSel(10, compareOpt.top)}>Top 10 item</option><option value="20" ${optSel(20, compareOpt.top)}>Top 20 item</option><option value="999" ${optSel(999, compareOpt.top)}>Semua item</option></select></div>
     </div>
     <div id="compareBody">${spinnerBlock()}</div></div>`;
 }
 async function loadCompareChart() {
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
-  const thisStart = dateToStr(new Date(y, m, 1)), thisEnd = dateToStr(new Date(y, m + 1, 0));
-  const lastStart = dateToStr(new Date(y, m - 1, 1)), lastEnd = dateToStr(new Date(y, m, 0));
-  const rows = await fetchAllPages(() => sb.from('barang_keluar').select('tanggal,pelanggan_id,barang_keluar_item(barang_id,nama_barang,satuan,jumlah,subtotal)').gte('tanggal', lastStart).lte('tanggal', thisEnd).order('tanggal').order('id'));
+  // 3 bulan sekaligus (bulan ini, 1 dan 2 bulan lalu) sehingga ganti "Rentang Bulan" tidak perlu memuat ulang
+  const months = [0, 1, 2].map(k => { const s0 = new Date(y, m - k, 1), e0 = new Date(y, m - k + 1, 0); return { start: dateToStr(s0), end: dateToStr(e0), days: e0.getDate(), label: `${BULAN_ID[s0.getMonth()]} ${s0.getFullYear()}` }; });
+  const rows = await fetchAllPages(() => sb.from('barang_keluar').select('tanggal,pelanggan_id,barang_keluar_item(barang_id,nama_barang,satuan,jumlah,subtotal)').gte('tanggal', months[2].start).lte('tanggal', months[0].end).order('tanggal').order('id'));
   const box = $('#compareBody'); if (!box) return;   // pengguna sudah pindah halaman
   if (!rows) { box.innerHTML = errBox('Gagal memuat data perbandingan.', 'loadCompareChart()'); return; }
-  compareData = { rows, thisStart, lastStart, lastEnd, today: now.getDate(), lastLabel: `${BULAN_ID[(m + 11) % 12]} ${m === 0 ? y - 1 : y}`, thisLabel: `${BULAN_ID[m]} ${y}` };
+  compareData = { rows, months, today: now.getDate() };
   renderCompare();
 }
 function onCompareOpt() {
-  compareOpt = { metrik: $('#cmpMetrik').value, mode: $('#cmpMode').value, top: num($('#cmpTop').value), pelanggan: $('#cmpPel').value, kategori: $('#cmpKat').value };
+  compareOpt = { rentang: $('#cmpRentang').value, metrik: $('#cmpMetrik').value, mode: $('#cmpMode').value, top: num($('#cmpTop').value), pelanggan: $('#cmpPel').value, kategori: $('#cmpKat').value };
   renderCompare();
 }
 function renderCompare() {
   const box = $('#compareBody'); if (!box || !compareData) return;
-  const d = compareData, qty = compareOpt.metrik === 'qty', field = qty ? 'jumlah' : 'subtotal', sama = compareOpt.mode === 'sama';
+  const d = compareData, ks = RENTANG[compareOpt.rentang] || RENTANG.b, qty = compareOpt.metrik === 'qty', field = qty ? 'jumlah' : 'subtotal', sama = compareOpt.mode === 'sama';
   const fmtV = v => qty ? fmtNum(v) : fmtRupiah(v);
-  const cutDay = Math.min(d.today, num(d.lastEnd.slice(8, 10)));
-  const lastCut = sama ? d.lastStart.slice(0, 8) + pad(cutDay) : d.lastEnd;
+  const cutDay = k => Math.min(d.today, d.months[k].days), cut = k => d.months[k].start.slice(0, 8) + pad(cutDay(k));
+  const bulanKe = t => t >= d.months[0].start ? 0 : t >= d.months[1].start ? 1 : t >= d.months[2].start ? 2 : -1;
   const agg = {}, bMap = new Map(AppState.masterBarang.map(b => [b.id, b]));
   d.rows.forEach(r => {
     if (compareOpt.pelanggan && r.pelanggan_id !== compareOpt.pelanggan) return;
-    const ini = r.tanggal >= d.thisStart;
-    if (!ini && r.tanggal > lastCut) return;
+    const k = bulanKe(r.tanggal); if (k < 0 || !ks.includes(k)) return;
+    if (sama && k > 0 && r.tanggal > cut(k)) return;
     (r.barang_keluar_item || []).forEach(i => {
       if (compareOpt.kategori && katKey(bMap.get(i.barang_id)) !== compareOpt.kategori) return;
-      const e = agg[i.nama_barang] = agg[i.nama_barang] || { nama: i.nama_barang, lalu: 0, ini: 0 }; e[ini ? 'ini' : 'lalu'] += num(i[field]); });
+      const e = agg[i.nama_barang] = agg[i.nama_barang] || { nama: i.nama_barang, v: [0, 0, 0] }; e.v[k] += num(i[field]);
+    });
   });
-  const list = Object.values(agg).sort((a, b) => (b.lalu + b.ini) - (a.lalu + a.ini));
-  if (!list.length) { box.innerHTML = '<p class="text-secondary small mb-0">Tidak ada barang keluar untuk filter ini pada bulan lalu maupun bulan ini.</p>'; return; }
+  const sum = e => ks.reduce((s, k) => s + e.v[k], 0);
+  const list = Object.values(agg).sort((a, b) => sum(b) - sum(a));
+  if (!list.length) { box.innerHTML = '<p class="text-secondary small mb-0">Tidak ada barang keluar untuk filter ini pada bulan yang dipilih.</p>'; return; }
   const pelNama = compareOpt.pelanggan ? (AppState.masterPelanggan.find(p => p.id === compareOpt.pelanggan) || {}).nama : '';
   const katLabel = compareOpt.kategori ? (kategoriList().find(([k]) => k === compareOpt.kategori) || [])[1] : '';
   const filterInfo = [pelNama && 'Pelanggan: ' + pelNama, katLabel && 'Jenis: ' + katLabel].filter(Boolean).join('  ·  ');
-  const totLalu = list.reduce((s, e) => s + e.lalu, 0), totIni = list.reduce((s, e) => s + e.ini, 0);
+  const tot = ks.map(k => list.reduce((s, e) => s + e.v[k], 0)), li = ks.length - 1;
   const pct = (a, b) => a > 0 ? ((b - a) / a * 100) : null;
-  const pTot = pct(totLalu, totIni), up = totIni >= totLalu;
+  const prevText = ks[li - 1] === 2 ? '2 bulan lalu' : 'bulan lalu';
+  const chg = (p, t) => p === null ? '' : `<div class="${p >= 0 ? 'text-success' : 'text-danger'} fw-bold small">${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(0)}% <span class="text-secondary fw-normal">vs ${t}</span></div>`;
+  const chgHtml = (chg(pct(tot[li - 1], tot[li]), prevText) + (ks.length === 3 ? chg(pct(tot[0], tot[2]), '2 bulan lalu') : '')) || '<div class="text-secondary">-</div>';
   const shown = list.slice(0, compareOpt.top);
-  const h = Math.max(260, shown.length * 40 + 70);
-  const lblLalu = d.lastLabel + (sama ? ` (s/d tgl ${cutDay})` : ''), lblIni = d.thisLabel + ' (s/d hari ini)';
+  const h = Math.max(260, shown.length * (ks.length * 15 + 16) + 80);
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark', acc = Brand.accent();
+  const col = dark ? { 2: '#475569', 1: '#64748b', 0: acc } : { 2: '#cbd5e1', 1: '#94a3b8', 0: acc };
+  const lb = ks.map(k => d.months[k].label + (k === 0 ? ' (s/d hari ini)' : sama ? ` (s/d tgl ${cutDay(k)})` : ''));
+  const colCls = ks.length === 3 ? 'col-md-3' : 'col-md-4';
   box.innerHTML = `
     <div class="row g-2 mb-3">
-      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">${esc(lblLalu)}</div><div class="mc-value" style="color:#64748b">${fmtV(totLalu)}</div></div></div></div>
-      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">${esc(lblIni)}</div><div class="mc-value">${fmtV(totIni)}</div></div></div></div>
-      <div class="col-md-4"><div class="mini-card mb-0"><div><div class="mc-name">Perubahan total</div><div class="mc-value ${up ? 'text-success' : 'text-danger'}">${up ? '▲' : '▼'} ${pTot === null ? (totIni > 0 ? 'Baru' : '-') : Math.abs(pTot).toFixed(0) + '%'}</div></div></div></div>
+      ${ks.map((k, i) => `<div class="col-6 ${colCls}"><div class="mini-card mb-0" style="border-left:4px solid ${col[k]}"><div><div class="mc-name">${esc(lb[i])}</div><div class="mc-value" ${k === 0 ? '' : 'style="color:#64748b"'}>${fmtV(tot[i])}</div></div></div></div>`).join('')}
+      <div class="col-12 ${colCls}"><div class="mini-card mb-0" style="border-left:4px solid ${acc}"><div><div class="mc-name">Perubahan bulan ini</div>${chgHtml}</div></div></div>
     </div>
     ${filterInfo ? `<p class="small fw-bold text-success mb-2"><i class="bi bi-funnel-fill"></i> ${esc(filterInfo)}</p>` : ''}
     <div style="position:relative;height:${h}px;"><canvas id="compareChart"></canvas></div>
-    <div class="table-responsive mt-3" style="max-height:300px;overflow:auto;"><table class="table"><thead><tr><th>Item</th><th class="text-end">Bulan Lalu</th><th class="text-end">Bulan Ini</th><th class="text-end">Selisih</th><th class="text-end">%</th></tr></thead><tbody>
-      ${shown.map(e => { const sel = e.ini - e.lalu, p = pct(e.lalu, e.ini); return `<tr><td class="fw-bold">${esc(e.nama)}</td><td class="text-end">${fmtV(e.lalu)}</td><td class="text-end">${fmtV(e.ini)}</td><td class="text-end ${sel >= 0 ? 'text-success' : 'text-danger'}">${sel >= 0 ? '+' : '-'}${fmtV(Math.abs(sel))}</td><td class="text-end">${p === null ? (e.ini > 0 ? 'Baru' : '-') : (sel >= 0 ? '+' : '-') + Math.abs(p).toFixed(0) + '%'}</td></tr>`; }).join('')}
+    <div class="table-responsive mt-3" style="max-height:320px;overflow:auto;"><table class="table"><thead><tr><th>Item</th>${ks.map(k => `<th class="text-end">${esc(d.months[k].label)}</th>`).join('')}<th class="text-end">Selisih vs ${prevText}</th><th class="text-end">%</th></tr></thead><tbody>
+      ${shown.map(e => { const a = e.v[ks[li - 1]], b = e.v[ks[li]], sel = b - a, p = pct(a, b); return `<tr><td class="fw-bold">${esc(e.nama)}</td>${ks.map(k => `<td class="text-end" ${k === 0 ? 'style="background:var(--accent-light)"' : ''}>${fmtV(e.v[k])}</td>`).join('')}<td class="text-end ${sel >= 0 ? 'text-success' : 'text-danger'}">${sel >= 0 ? '+' : '-'}${fmtV(Math.abs(sel))}</td><td class="text-end">${p === null ? (b > 0 ? 'Baru' : '-') : (sel >= 0 ? '+' : '-') + Math.abs(p).toFixed(0) + '%'}</td></tr>`; }).join('')}
     </tbody></table></div>`;
   if (chartInstances.compare) chartInstances.compare.destroy();
-  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
   const tc = dark ? '#9aa0bc' : '#6b7280', gc = dark ? '#262c47' : '#e5e7eb';
   chartInstances.compare = new Chart($('#compareChart'), {
     type: 'bar',
-    data: { labels: shown.map(e => e.nama), datasets: [
-      { label: lblLalu, data: shown.map(e => e.lalu), backgroundColor: '#94a3b8', borderRadius: 5 },
-      { label: lblIni, data: shown.map(e => e.ini), backgroundColor: Brand.accent(), borderRadius: 5 } ] },
+    data: { labels: shown.map(e => e.nama), datasets: ks.map((k, i) => ({ label: lb[i], data: shown.map(e => e.v[k]), backgroundColor: col[k], borderRadius: 4 })) },
     options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { position: 'top', labels: { color: tc } }, tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtV(c.parsed.x)}` } } },
       scales: { x: { ticks: { color: tc, callback: v => qty ? fmtNum(v) : 'Rp ' + fmtNum(v) }, grid: { color: gc } }, y: { ticks: { color: tc }, grid: { display: false } } } }
